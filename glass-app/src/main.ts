@@ -1,5 +1,6 @@
 import { GlanceApp } from './app';
 import { connectEvenBridge } from './bridge/evenBridge';
+import { createMirrorBridge } from './bridge/mirrorBridge';
 import { createMockBridge } from './bridge/mockBridge';
 import { BoardStore, type BoardSync } from './sync/boardSync';
 import { MockSync } from './sync/mockSync';
@@ -29,10 +30,16 @@ async function boot(): Promise<void> {
 
   // Inside the Even App the native handler exists and the real bridge is
   // used; in a plain browser we fall back to the DOM mock. ?bridge=mock
-  // forces the mock even on-device (useful for phone-screen debugging).
-  const bridge =
-    (params.get('bridge') === 'mock' ? null : await connectEvenBridge()) ??
-    createMockBridge(document.getElementById('app') ?? document.body);
+  // forces the mock even on-device (useful for phone-screen debugging), and
+  // ?mirror=1 renders to the glasses AND the phone screen simultaneously so
+  // the phone's screen recorder can capture what the wearer sees.
+  const mount = document.getElementById('app') ?? document.body;
+  const real = params.get('bridge') === 'mock' ? null : await connectEvenBridge();
+  const bridge = real
+    ? params.get('mirror') === '1'
+      ? createMirrorBridge(real, createMockBridge(mount))
+      : real
+    : createMockBridge(mount);
 
   const store = new BoardStore();
   const sync = await pickSync(params);

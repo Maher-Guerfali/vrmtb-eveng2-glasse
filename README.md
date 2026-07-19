@@ -80,6 +80,21 @@ The app ships with **static demo data** (three invented breast-cancer cases in
 `?step=25` slows the scripted board to 25 s per advance; `?bridge=mock` forces
 the browser preview even inside the Even App.
 
+### Recording a demo
+
+The G2 has no HUD screen-capture (the display is a waveguide, filmable only
+through the lens), so three options, best first:
+
+1. **Phone mirror** — sideload with `?mirror=1`: the app renders to the
+   glasses *and* to the phone screen simultaneously; record the phone with its
+   OS screen recorder while wearing the glasses. What you capture is exactly
+   what the HUD shows, live, including touchpad interaction.
+2. **Browser preview** — `npm run dev`, open `http://localhost:5190/?step=25`,
+   record with any screen recorder. Same pixels, no hardware needed.
+3. **Through-the-lens** — film the lens with a phone camera for a "this is
+   real" shot: dim room, camera close to the lens at eye level, focus locked
+   past the lens. Use it for a few hero seconds, mirror/preview for the rest.
+
 ## Status
 
 - [x] Platform research (hardware, SDK 0.0.12 API surface verified from package types)
