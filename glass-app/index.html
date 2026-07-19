@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VR-MTB Glance</title>
+    <style>
+      /* Styling only matters for the browser preview (mock bridge). On the
+         real device the page itself is never seen - the HUD is rendered by
+         the glasses' own OS from the containers we push over the bridge. */
+      body { margin: 0; background: #101214; color: #9aa4ad; font: 14px/1.5 system-ui, sans-serif; }
+      #app { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
