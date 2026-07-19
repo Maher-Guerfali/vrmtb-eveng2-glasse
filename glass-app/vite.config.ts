@@ -4,5 +4,8 @@ import { defineConfig } from 'vite';
 // relative asset paths are required (no assumption about the mount path).
 export default defineConfig({
   base: './',
-  server: { port: 5190 },
+  // host:true binds to the LAN interface - required for QR sideloading, since
+  // the Even App on the phone loads the app straight from this dev server.
+  server: { port: 5190, host: true },
+  preview: { port: 5190, host: true },
 });

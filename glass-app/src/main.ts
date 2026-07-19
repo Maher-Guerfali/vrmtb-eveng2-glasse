@@ -18,7 +18,10 @@ async function pickSync(params: URLSearchParams): Promise<BoardSync> {
       identity: params.get('identity') ?? `g2-${Math.random().toString(36).slice(2, 8)}`,
     });
   }
-  return new MockSync();
+  // ?step=25 slows the scripted board to one advance per 25 s - handy when
+  // screen-recording a demo for the team.
+  const stepSec = Number(params.get('step'));
+  return new MockSync(stepSec > 0 ? stepSec * 1000 : undefined);
 }
 
 async function boot(): Promise<void> {

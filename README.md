@@ -57,6 +57,29 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
   LiveKit room (token service from `vrmtb-infra`) — enable it with URL params
   once the dashboard publishes the `vrmtb.hud` topic (see ARCHITECTURE.md).
 
+## Installing on the glasses (QR sideload)
+
+1. **Phone (once):** in the Even Realities App, enable developer/Prototype
+   mode: Even Hub → top-right icon → *My plugin* → tap your name → enable
+   *Prototype mode*. Same account as [hub.evenrealities.com](https://hub.evenrealities.com/).
+2. **PC:** `cd glass-app && npm install && npm run dev` — the server binds to
+   your LAN, note the `Network:` URL Vite prints (e.g. `http://192.168.178.x:5190`).
+   Phone and PC must be on the same Wi-Fi.
+3. **QR:** encode that URL as a QR code — Even Hub CLI
+   (`evenhub qr --url "http://192.168.178.x:5190"`, see the
+   [CLI docs](https://hub.evenrealities.com/docs/reference/cli)) or any QR
+   generator; the QR simply contains the URL.
+4. **Sideload:** Even App → *Developer Center* → built-in scanner → scan.
+   The plugin syncs to the G2 and appears in the glasses menu.
+5. For a shareable build instead of a live dev server: `npm run build`, then
+   upload the bundle as a private build on the
+   [dev portal](https://hub.evenrealities.com/) ([quickstart](https://hub.evenrealities.com/docs/get-started/quickstart/index)).
+
+The app ships with **static demo data** (three invented breast-cancer cases in
+`src/sync/mockSync.ts`) and needs no backend: ideal for screen recordings.
+`?step=25` slows the scripted board to 25 s per advance; `?bridge=mock` forces
+the browser preview even inside the Even App.
+
 ## Status
 
 - [x] Platform research (hardware, SDK 0.0.12 API surface verified from package types)
