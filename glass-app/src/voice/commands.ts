@@ -26,5 +26,21 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
   if (decision) return { kind: 'decision', text: decision[1] };
   const note = text.match(/^(?:write |take |create |add )(?:a )?note(?: that)?\s+(.+)$/i);
   if (note) return { kind: 'note', text: note[1] };
+
+  // German command set - the project's home board speaks German.
+  if (/^(stopp|abbrechen|beenden)$/.test(normalized)) return { kind: 'stop' };
+  if (/^(schreibe |erstelle |mache )?(eine |neue )?notiz( aufnehmen)?$/.test(normalized)) return { kind: 'startNote' };
+  if (/^(nächster|naechster) (patient|fall)$/.test(normalized)) return { kind: 'nav', delta: 1 };
+  if (/^(vorheriger|letzter) (patient|fall)$/.test(normalized)) return { kind: 'nav', delta: -1 };
+  if (/^(öffne|oeffne|zeige) (das |die |den )?(board|tafel|agenda)$/.test(normalized)) return { kind: 'open', target: 'board' };
+  if (/^(öffne|oeffne|zeige) (die )?(patientenliste|liste)$/.test(normalized)) return { kind: 'open', target: 'patients' };
+  if (/^(öffne|oeffne|zeige) (den |das )?(patienten?|fall)$/.test(normalized)) return { kind: 'open', target: 'patient' };
+  if (/^(öffne|oeffne|zeige) (die )?notizen$/.test(normalized)) return { kind: 'open', target: 'notes' };
+  if (/^(lies|lese) (die )?notizen( vor)?$/.test(normalized)) return { kind: 'readNotes' };
+  const decisionDe = text.match(/^(?:entscheidung|beschluss)(?: ist| dass)?\s+(.+)$/i);
+  if (decisionDe) return { kind: 'decision', text: decisionDe[1] };
+  const noteDe = text.match(/^(?:schreibe |notiere )?(?:eine )?notiz(?: dass)?\s+(.+)$/i);
+  if (noteDe) return { kind: 'note', text: noteDe[1] };
+
   return { kind: 'unknown' };
 }

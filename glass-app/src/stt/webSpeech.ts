@@ -22,6 +22,9 @@ export class WebSpeechSttProvider implements SttProvider {
   readonly label = 'web speech';
   private recognition?: Recognition;
 
+  /** lang: BCP-47 tag (e.g. "de-DE"); defaults to the phone's UI language. */
+  constructor(private lang?: string) {}
+
   async start(onSegment: (seg: SttSegment) => void, onEnd?: () => void): Promise<void> {
     const browser = window as typeof window & {
       SpeechRecognition?: RecognitionConstructor;
@@ -32,7 +35,7 @@ export class WebSpeechSttProvider implements SttProvider {
     const recognition = new ctor();
     recognition.continuous = true;
     recognition.interimResults = false;
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = this.lang ?? (navigator.language || 'en-US');
     recognition.onresult = (event) => {
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];

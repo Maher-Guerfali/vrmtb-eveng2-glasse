@@ -53,6 +53,10 @@ export class GlanceApp {
   // path instead — better accuracy, but needs the transcription server.
   private sttForcedProxy = new URLSearchParams(location.search).get('stt') === 'proxy';
   private ttsForcedProxy = new URLSearchParams(location.search).get('tts') === 'proxy';
+  // ?lang=de-DE overrides both recognition and readback; the command grammar
+  // itself accepts English and German regardless of engine language.
+  private speechLang = new URLSearchParams(location.search).get('lang')
+    ?? (navigator.language || 'en-US');
   private webStt: WebSpeechSttProvider | undefined;
   private sttSegments: string[] = [];
   private dictationEngine: 'device' | 'proxy' = 'proxy';
@@ -234,7 +238,7 @@ export class GlanceApp {
   }
 
   private async startVoiceCmdProvider(): Promise<boolean> {
-    const provider = new WebSpeechSttProvider();
+    const provider = new WebSpeechSttProvider(this.speechLang);
     try {
       await provider.start(
         (seg) => { if (seg.isFinal && this.voiceCmd === provider) this.handleVoiceSegment(seg.text); },
@@ -400,7 +404,7 @@ export class GlanceApp {
   /** Standalone dictation on the phone's speech engine. False = engine missing,
    *  so the caller falls back to the glasses-mic -> proxy recording path. */
   private async startDeviceDictation(): Promise<boolean> {
-    const provider = new WebSpeechSttProvider();
+    const provider = new WebSpeechSttProvider(this.speechLang);
     this.sttSegments = [];
     try {
       await provider.start((seg) => {
@@ -477,7 +481,7 @@ export class GlanceApp {
     try {
       if (!this.ttsForcedProxy && canSpeakOnDevice()) {
         try {
-          await speakOnDevice(text);
+          await speakOnDevice(text, this.speechLang);
           return;
         } catch (error) {
           console.warn('[tts] on-device readback failed, trying proxy', error);

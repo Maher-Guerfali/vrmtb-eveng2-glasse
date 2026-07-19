@@ -95,6 +95,7 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 | `?mirror=1` | Render to the glasses **and** the phone screen at once — see "Recording a demo" |
 | `?step=<seconds>` | Auto-advance the mock board's active case every N seconds (off by default — the board stays still until you navigate it) |
 | `?privacy=1` | Enable wear-state PHI blanking (off by default during dev/demo — see COMPLIANCE.md) |
+| `?lang=<bcp47>` | Speech language for dictation, voice control, and readback (e.g. `?lang=de-DE`); defaults to the phone's UI language. Voice commands themselves are understood in **English and German** in any engine language |
 | `?stt=proxy` | Force dictation through the local OpenAI proxy (glasses mic → PC server). Default is the phone's own speech engine — no PC, no key |
 | `?transcribe_url=<url>` | Point proxy dictation at a server other than the default `http://192.168.178.65:8788/api/transcribe` |
 | `?tts=0` | Disable the spoken note readback (on by default; plays on the **phone** — the G2 has no speaker) |

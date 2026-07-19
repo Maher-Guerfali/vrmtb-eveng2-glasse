@@ -7,10 +7,10 @@ export function canSpeakOnDevice(): boolean {
     && typeof SpeechSynthesisUtterance !== 'undefined';
 }
 
-export function speakOnDevice(text: string): Promise<void> {
+export function speakOnDevice(text: string, lang?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = navigator.language || 'en-US';
+    utterance.lang = lang ?? (navigator.language || 'en-US');
     utterance.onend = () => resolve();
     utterance.onerror = (event) => reject(new Error(`Speech synthesis failed: ${event.error}`));
     // Latest note wins: drop anything still queued from a previous readback.
