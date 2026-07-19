@@ -82,6 +82,8 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 | `?step=<seconds>` | Auto-advance the mock board's active case every N seconds (off by default — the board stays still until you navigate it) |
 | `?privacy=1` | Enable wear-state PHI blanking (off by default during dev/demo — see COMPLIANCE.md) |
 | `?transcribe_url=<url>` | Point dictation at a transcription server other than the default `http://192.168.178.65:8788/api/transcribe` |
+| `?tts=0` | Disable the spoken note readback (on by default; plays on the **phone** — the G2 has no speaker) |
+| `?tts_url=<url>` | Point readback at a TTS endpoint other than `<transcribe server>/api/tts` |
 | `?sync=livekit&token_url=…&room=…&identity=…` | Use the real LiveKit board instead of mock data |
 
 ## Installing on the glasses (QR sideload)
@@ -136,6 +138,13 @@ OpenAI's transcription API and returns the text, saved to the Notes card. The
 proxy exists so the glasses' JS bundle never touches the API key directly —
 the key stays server-side, on your PC only.
 
+After the note is saved, the same server's `/api/tts` endpoint (OpenAI
+`gpt-4o-mini-tts`, same key) reads it back aloud — **through the phone
+speaker**, since the G2 has no speaker of its own. Readback is on by default;
+add `?tts=0` to keep the phone silent (e.g. in an actual meeting room), and
+mind that spoken readback of patient notes is audible to everyone nearby —
+see COMPLIANCE.md before using it around real patient data.
+
 **Start it** (needs an OpenAI API key — see "Do I need a ChatGPT/OpenAI API
 key?" below):
 
@@ -163,10 +172,11 @@ can't connect — never a crash.
 ### Do I need a ChatGPT/OpenAI API key?
 
 Yes, for this specific implementation — the transcription server calls
-OpenAI's `gpt-4o-transcribe` model, which needs an `OPENAI_API_KEY` from
-[platform.openai.com](https://platform.openai.com/). That key is **never**
-part of the glasses bundle; it lives only in the transcription server's
-process environment on your PC (see above). This is a demo-stage choice for
+OpenAI's `gpt-4o-transcribe` model (and `gpt-4o-mini-tts` for the spoken
+readback), which needs an `OPENAI_API_KEY` from
+[platform.openai.com](https://platform.openai.com/). One key covers both.
+That key is **never** part of the glasses bundle; it lives only in the
+transcription server's process environment on your PC (see above). This is a demo-stage choice for
 speed — COMPLIANCE.md's original recommendation for real patient audio was a
 self-hosted model (no cloud vendor, no per-key cost); revisit that decision
 before pointing this at a real board (see COMPLIANCE.md §3, updated).
@@ -193,6 +203,7 @@ through the lens), so three options, best first:
 - [x] App scaffold: menu-driven navigation (Board / Patient list / Patient / Notes)
 - [x] Manual patient control: browse-then-commit selection, independent of any auto-advancing timer
 - [x] Voice dictation: mic capture → private local transcription proxy → OpenAI → note, verified end to end
+- [x] Spoken note readback (TTS): saved note → same proxy `/api/tts` → OpenAI `gpt-4o-mini-tts` → phone speaker (`?tts=0` disables; not yet hand-tested on device)
 - [x] On-device validation with a physical G2 (found and fixed the real root cause of unresponsive touch input — see ARCHITECTURE.md §5)
 - [x] `.ehpk` packaging for teammate distribution (`npm run pack`, Even Hub portal import)
 - [x] LiveKit sync client speaking vr-mtb-web's **real** backend protocol

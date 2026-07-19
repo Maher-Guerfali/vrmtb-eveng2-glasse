@@ -11,6 +11,7 @@ import { routeInput } from './input/router';
 import { watchWearState } from './privacy/wearGuard';
 import type { BoardStore, BoardSync } from './sync/boardSync';
 import { transcribePcm } from './stt/openAiProxy';
+import { speakText } from './tts/openAiProxy';
 
 const NOTIFICATION_MS = 4_000;
 const TIMER_REFRESH_MS = 30_000;
@@ -39,6 +40,11 @@ export class GlanceApp {
     // Default to this development PC's Wi-Fi address. Override it without a
     // rebuild with ?transcribe_url=http://<server-ip>:8788/api/transcribe.
     ?? 'http://192.168.178.65:8788/api/transcribe';
+  // Note readback lives on the same proxy; ?tts_url= overrides it separately.
+  private ttsUrl = new URLSearchParams(location.search).get('tts_url')
+    ?? this.transcribeUrl.replace('/api/transcribe', '/api/tts');
+  // Readback plays on the PHONE (the G2 has no speaker); ?tts=0 keeps it silent.
+  private ttsEnabled = new URLSearchParams(location.search).get('tts') !== '0';
 
   constructor(
     private bridge: GlassBridge,
@@ -200,12 +206,23 @@ export class GlanceApp {
       this.notesCard.setDraft('');
       this.flashFooter('Note saved');
       void this.render();
+      if (this.ttsEnabled) void this.speakNote(text);
     } catch (error) {
       this.notesCard.setDraft('');
       const message = error instanceof Error ? error.message : 'Transcription failed';
       this.flashFooter(message === 'Failed to fetch' ? 'Server unreachable' : message.slice(0, 44));
       void this.render();
       console.warn('[dictation] transcription failed', error);
+    }
+  }
+
+  /** Read the saved note back through the phone speaker (the G2 itself is silent). */
+  private async speakNote(text: string): Promise<void> {
+    try {
+      await speakText(this.ttsUrl, text);
+    } catch (error) {
+      console.warn('[tts] readback failed', error);
+      this.flashFooter('Readback unavailable');
     }
   }
 
