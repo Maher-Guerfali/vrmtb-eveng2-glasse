@@ -70,8 +70,15 @@ desktop user all track the same case switch within ~1 s.
       identity flows into the glass app (depends on P1)
 - [ ] Dashboard-side notes integration: today notes live only in the glass
       app's in-memory Notes card, not the shared notes store
-- [ ] Captions card: rolling live transcript via `textContainerUpgrade`
-      (streaming `SttProvider`/`webSpeech.ts` already scaffolded, not wired)
+- [x] On-device speech is now the DEFAULT engine both ways: Web Speech
+      dictation with a live draft (no PC/key/server; `?stt=proxy` forces the
+      OpenAI proxy, automatic fallback when the WebView lacks recognition)
+      and note readback via the phone's speechSynthesis (`?tts=proxy` /
+      `?tts=0`); `?lang=` overrides the language end to end
+- [x] Captions card: rolling live transcript of the voice-control stream
+      (Menu → Captions, or say "start captions" / "starte die Untertitel");
+      word-wrapped to the HUD, session-only, verified in the browser preview
+      — on-device BLE cadence still to be measured
 - [ ] Optional DE↔EN caption translation toggle
 
 **Exit gate:** a dictated note appears in the dashboard notes panel during a
@@ -81,10 +88,15 @@ this exit gate are still open.)*
 
 ## P3 — Board actions & experiments
 
-- [ ] Hands-free voice commands: `voice/commands.ts` (phrase parser) and
-      `stt/webSpeech.ts` (Web Speech provider) are scaffolded but not wired
-      into `app.ts` — would let a wearer say "open notes" / "write a note
-      that…" instead of tap navigation
+- [x] Hands-free voice commands wired into `app.ts` (Menu → Voice control):
+      open board/patient list/patient/notes/captions, next/previous patient
+      with the room-wide `selectPatient` broadcast, take a note / note
+      〈text〉 ("stop" saves), decision 〈text〉 (starred case-tagged note,
+      local-only until a dashboard write API exists), read notes. English +
+      German grammar, unit-tested (`npm test`); auto-restart on engine
+      silence-timeout with a flap-guard, readback pauses the mic (no TTS
+      feedback loop), `?privacy=1` wear-guard also kills listening on
+      take-off. Verified headless; not yet hand-tested on device
 - [ ] Decide card: `DecisionRequested` → confirm/dissent tap → tally on dashboard
 - [ ] AI card: voice query → existing AI backend → ≤5-line answer
 - [ ] Experiment: publish glasses/phone mic into the LiveKit room (can the G2

@@ -78,6 +78,10 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 - **Live board awareness**: when someone else moves the board to another
   case, the footer flashes the new case label; the Board card's status row
   carries a per-case elapsed clock (resets only on a real case switch).
+- **Captions**: Menu → Captions (or say *"start captions"* /
+  *"starte die Untertitel"*) shows a rolling, word-wrapped live transcript
+  of everything the voice-control stream hears — session-only, cleared on
+  exit like notes.
 - **Live sync**: `src/sync/liveKitSync.ts` talks to the **real** vr-mtb-web
   backend directly — `POST /api/rooms/join`, `GET /api/session`, and the same
   LiveKit `activePatient`/`command` data-channel topics the dashboard's own

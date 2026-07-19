@@ -2,8 +2,8 @@ import type { CardContent } from '../hud/composer';
 import type { BoardStore } from '../sync/boardSync';
 import type { Card } from './types';
 
-export type MenuChoice = 'Board' | 'Patient list' | 'Back to patient' | 'Forward details' | 'Notes' | 'Voice control';
-const choices: MenuChoice[] = ['Board', 'Patient list', 'Back to patient', 'Forward details', 'Notes', 'Voice control'];
+export type MenuChoice = 'Board' | 'Patient list' | 'Back to patient' | 'Forward details' | 'Notes' | 'Captions' | 'Voice control';
+const choices: MenuChoice[] = ['Board', 'Patient list', 'Back to patient', 'Forward details', 'Notes', 'Captions', 'Voice control'];
 
 export class MenuCard implements Card {
   readonly id = 'menu';

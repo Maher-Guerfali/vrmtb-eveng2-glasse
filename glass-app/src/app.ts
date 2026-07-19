@@ -4,6 +4,7 @@ import { PatientCard } from './cards/patientCard';
 import { NotesCard } from './cards/notesCard';
 import { MenuCard } from './cards/menuCard';
 import { BoardCard } from './cards/boardCard';
+import { CaptionsCard } from './cards/captionsCard';
 import type { Card } from './cards/types';
 import { composePage } from './hud/composer';
 import { ID_FOOTER, NAME_FOOTER } from './hud/layout';
@@ -25,10 +26,12 @@ export class GlanceApp {
   private notesCard = new NotesCard();
   private menuCard = new MenuCard();
   private boardCard = new BoardCard();
-  private cards: Card[] = [this.patientListCard, this.patientCard, this.notesCard, this.menuCard, this.boardCard];
+  private captionsCard = new CaptionsCard();
+  private cards: Card[] = [this.patientListCard, this.patientCard, this.notesCard, this.menuCard, this.boardCard, this.captionsCard];
   // The menu is the app's home screen; no patient opens until selected.
   private cardIndex = 3;
   private static readonly BOARD_INDEX = 4;
+  private static readonly CAPTIONS_INDEX = 5;
 
   private firstRender = true;
   private foreground = true;
@@ -100,6 +103,9 @@ export class GlanceApp {
     if (this.privacyGuard) {
       this.disposers.push(watchWearState(this.bridge, (blanked) => {
         this.patientCard.privacyBlanked = blanked;
+        // Glasses set down = an open mic nobody is wearing. Same trigger as
+        // PHI blanking, same posture: stop listening.
+        if (blanked && this.voiceControl) void this.disableVoiceControl('Voice off (glasses removed)');
         void this.render();
       }));
     }
@@ -171,6 +177,7 @@ export class GlanceApp {
         case 'Back to patient': this.patientCard.resetDetail(); this.showCard(1); break;
         case 'Forward details': this.patientCard.nextDetail(1); this.showCard(1); break;
         case 'Notes': this.showCard(2); break;
+        case 'Captions': this.showCard(GlanceApp.CAPTIONS_INDEX); break;
         case 'Voice control': void this.toggleVoiceControl(); break;
       }
       return;
@@ -221,6 +228,7 @@ export class GlanceApp {
     }
     this.voiceControl = true;
     this.menuCard.voiceControlOn = true;
+    this.captionsCard.listening = true;
     this.voiceRestartCount = 0;
     this.flashFooter('Voice on - try "open board", "take a note"');
     void this.render();
@@ -230,6 +238,7 @@ export class GlanceApp {
     this.voiceControl = false;
     this.voiceNoteActive = false;
     this.menuCard.voiceControlOn = false;
+    this.captionsCard.listening = false;
     const provider = this.voiceCmd;
     this.voiceCmd = undefined;
     await provider?.stop();
@@ -279,6 +288,9 @@ export class GlanceApp {
   }
 
   private handleVoiceSegment(transcript: string): void {
+    // Captions record everything heard - commands and dictation included.
+    this.captionsCard.push(transcript);
+    if (this.cardIndex === GlanceApp.CAPTIONS_INDEX) void this.render();
     if (this.voiceNoteActive) {
       if (parseVoiceCommand(transcript).kind === 'stop') {
         void this.finishVoiceNote();
@@ -295,6 +307,7 @@ export class GlanceApp {
         if (cmd.target === 'board') this.showCard(GlanceApp.BOARD_INDEX);
         else if (cmd.target === 'patients') this.showCard(0);
         else if (cmd.target === 'patient') { this.patientCard.resetDetail(); this.showCard(1); }
+        else if (cmd.target === 'captions') this.showCard(GlanceApp.CAPTIONS_INDEX);
         else this.showCard(2);
         break;
       case 'nav': this.voiceNav(cmd.delta); break;
@@ -511,6 +524,7 @@ export class GlanceApp {
     this.voiceControl = false;
     this.voiceNoteActive = false;
     this.menuCard.voiceControlOn = false;
+    this.captionsCard.listening = false;
     await this.voiceCmd?.stop();
     this.voiceCmd = undefined;
     await this.webStt?.stop();
@@ -549,6 +563,7 @@ export class GlanceApp {
     if (this.notifyTimer) clearTimeout(this.notifyTimer);
     await this.stopVoice();
     this.notesCard.clear();
+    this.captionsCard.clear(); // transcript is PHI-adjacent - dies with the session
     await this.sync.stop();
     this.store.clear(); // PHI evaporates with the session
     await this.bridge.shutdown();

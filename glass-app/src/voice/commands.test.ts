@@ -26,6 +26,7 @@ describe('parseVoiceCommand (English)', () => {
     expect(parseVoiceCommand('show the patient list')).toEqual({ kind: 'open', target: 'patients' });
     expect(parseVoiceCommand('go to the patient')).toEqual({ kind: 'open', target: 'patient' });
     expect(parseVoiceCommand('open notes')).toEqual({ kind: 'open', target: 'notes' });
+    expect(parseVoiceCommand('start captions')).toEqual({ kind: 'open', target: 'captions' });
   });
 
   it('parses decisions and note readback', () => {
@@ -63,6 +64,7 @@ describe('parseVoiceCommand (German)', () => {
     expect(parseVoiceCommand('öffne das Board')).toEqual({ kind: 'open', target: 'board' });
     expect(parseVoiceCommand('zeige die Patientenliste')).toEqual({ kind: 'open', target: 'patients' });
     expect(parseVoiceCommand('öffne die Notizen')).toEqual({ kind: 'open', target: 'notes' });
+    expect(parseVoiceCommand('starte die Untertitel')).toEqual({ kind: 'open', target: 'captions' });
     expect(parseVoiceCommand('lies die Notizen vor').kind).toBe('readNotes');
   });
 

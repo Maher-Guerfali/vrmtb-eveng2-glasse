@@ -1,5 +1,5 @@
 export type VoiceCommand =
-  | { kind: 'open'; target: 'board' | 'patient' | 'patients' | 'notes' }
+  | { kind: 'open'; target: 'board' | 'patient' | 'patients' | 'notes' | 'captions' }
   // Same next/previous vocabulary the dashboard's voice commands use, so a
   // wearer saying "next patient" matches what the rest of the room expects.
   | { kind: 'nav'; delta: 1 | -1 }
@@ -21,6 +21,7 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
   if (/^(open |show |go to )(the )?(patient list|patients|list)$/.test(normalized)) return { kind: 'open', target: 'patients' };
   if (/^(open |show |go to )(the )?(patient|case|active patient)$/.test(normalized)) return { kind: 'open', target: 'patient' };
   if (/^(open |show |go to )(the )?notes?$/.test(normalized)) return { kind: 'open', target: 'notes' };
+  if (/^(open |show |go to |start )(the )?captions?$/.test(normalized)) return { kind: 'open', target: 'captions' };
   if (/^read (the )?(last )?notes?( back)?$/.test(normalized)) return { kind: 'readNotes' };
   const decision = text.match(/^(?:add |record |take |write )?(?:a |the )?decision(?: is| that)?\s+(.+)$/i);
   if (decision) return { kind: 'decision', text: decision[1] };
@@ -36,6 +37,7 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
   if (/^(öffne|oeffne|zeige) (die )?(patientenliste|liste)$/.test(normalized)) return { kind: 'open', target: 'patients' };
   if (/^(öffne|oeffne|zeige) (den |das )?(patienten?|fall)$/.test(normalized)) return { kind: 'open', target: 'patient' };
   if (/^(öffne|oeffne|zeige) (die )?notizen$/.test(normalized)) return { kind: 'open', target: 'notes' };
+  if (/^(öffne|oeffne|zeige|starte) (die )?untertitel$/.test(normalized)) return { kind: 'open', target: 'captions' };
   if (/^(lies|lese) (die )?notizen( vor)?$/.test(normalized)) return { kind: 'readNotes' };
   const decisionDe = text.match(/^(?:entscheidung|beschluss)(?: ist| dass)?\s+(.+)$/i);
   if (decisionDe) return { kind: 'decision', text: decisionDe[1] };
