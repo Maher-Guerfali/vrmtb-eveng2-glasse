@@ -73,7 +73,10 @@ export class GlanceApp {
         setForeground: (entered) => { this.foreground = entered; if (entered) void this.render(); },
         exit: () => void this.dispose(),
       }),
-      this.store.onChange(() => void this.render()),
+      this.store.onChange(() => {
+        this.cueActiveCaseChange();
+        void this.render();
+      }),
       this.store.onNotify((n) => this.flashFooter(`◦ ${n.text}`)),
     );
 
@@ -100,6 +103,19 @@ export class GlanceApp {
     await this.sync.start(this.store);
   }
 
+  /** Someone else moved the board on: surface it wherever the wearer is looking. */
+  private lastActiveCaseId: string | undefined;
+  private cueActiveCaseChange(): void {
+    const board = this.store.board;
+    const activeId = board?.activeCaseId;
+    if (!activeId || activeId === this.lastActiveCaseId) return;
+    const first = this.lastActiveCaseId === undefined; // initial sync, not a switch
+    this.lastActiveCaseId = activeId;
+    if (first) return;
+    const label = board.cases.find((c) => c.caseId === activeId)?.label ?? activeId;
+    this.flashFooter(`▶ Now: ${label}`);
+  }
+
   private navigate(delta: number): void {
     if (this.cardIndex === 0) {
       this.patientListCard.move(this.store, delta);
@@ -122,6 +138,7 @@ export class GlanceApp {
     if (this.cardIndex === 0) {
       const caseId = this.patientListCard.selected(this.store);
       if (caseId) {
+        this.lastActiveCaseId = caseId; // own action - no "board moved" cue
         this.store.selectActiveCase(caseId);
         // Broadcasts to every other connected client (dashboard, other
         // glasses, MCP-driven assistants) via the same 'selectPatient'

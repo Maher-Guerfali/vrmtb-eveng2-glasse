@@ -31,9 +31,15 @@ export class BoardCard implements Card {
       .slice(windowStart, windowStart + 4)
       .map((c) => `${MARKER[c.status]} ${c.label}`);
 
+    // Boards chronically overrun; a silent per-case clock is discipline
+    // nobody else in the room notices.
+    const caseMin = store.activeCaseChangedAt
+      ? Math.floor((Date.now() - store.activeCaseChangedAt) / 60_000)
+      : 0;
     const status = [
       b.presenter ? `Presenting: ${b.presenter}` : '',
       elapsed(b.startedAtIso),
+      store.activeCaseChangedAt ? `case ${caseMin}m` : '',
       b.recording ? '⏺ rec' : '',
       store.isStale() ? '⚠ stale' : '',
     ]

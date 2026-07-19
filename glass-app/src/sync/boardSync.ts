@@ -13,12 +13,17 @@ export class BoardStore {
   board?: HudBoardState;
   private patients = new Map<string, HudPatientSummary>();
   lastMessageAt = 0;
+  /** When the active case last changed - drives the per-case elapsed timer. */
+  activeCaseChangedAt = 0;
 
   private changeCbs = new Set<() => void>();
   private notifyCbs = new Set<(n: HudNotification) => void>();
 
   setBoard(board: HudBoardState): void {
     this.lastMessageAt = Date.now();
+    // A full-state refresh with the same active case must not reset the
+    // per-case timer; only a real case switch does.
+    if (board.activeCaseId !== this.board?.activeCaseId) this.activeCaseChangedAt = Date.now();
     this.board = board;
     this.changeCbs.forEach((cb) => cb());
   }
@@ -40,6 +45,7 @@ export class BoardStore {
 
   selectActiveCase(caseId: string): void {
     if (!this.board?.cases.some((item) => item.caseId === caseId)) return;
+    if (caseId !== this.board.activeCaseId) this.activeCaseChangedAt = Date.now();
     this.board = { ...this.board, activeCaseId: caseId };
     this.changeCbs.forEach((cb) => cb());
   }
