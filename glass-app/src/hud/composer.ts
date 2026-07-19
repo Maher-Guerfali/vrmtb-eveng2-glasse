@@ -42,8 +42,8 @@ export function composePage(content: CardContent, ctx: ComposeContext): HudPage 
   const texts: HudTextBox[] = [];
   const w = HUD_WIDTH - PADDING_X * 2;
 
-  const deckPos = `${ctx.cardIndex + 1}/${ctx.cardCount}`;
-  const offline = ctx.offline ? '  ⨯offline' : '';
+  const deckPos = ctx.cardCount > 1 ? `  ·  ${ctx.cardIndex + 1}/${ctx.cardCount}` : '';
+  const offline = ctx.offline ? '  · offline' : '';
   texts.push({
     id: ID_HEADER,
     name: NAME_HEADER,
@@ -51,7 +51,9 @@ export function composePage(content: CardContent, ctx: ComposeContext): HudPage 
     y: HEADER_Y,
     w,
     h: HEADER_H,
-    content: fitLine(`${content.title}  ·  ${deckPos}${offline}`),
+    content: fitLine(`${content.title}${deckPos}${offline}`),
+    // G2 click events are delivered reliably only to a rendered text object.
+    captureInput: true,
   });
 
   content.lines.slice(0, MAX_BODY_LINES).forEach((line, row) => {

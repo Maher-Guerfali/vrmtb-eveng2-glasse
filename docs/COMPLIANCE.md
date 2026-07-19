@@ -49,28 +49,44 @@ grading, ER/PR/HER2, Ki-67, ≤3 history lines, the question to the board.
   Even App as a local runtime (content is rendered, not uploaded to Even —
   verify against Even's privacy terms and record the assessment).
 
-## 3. Microphone features (P2) — the sensitive part
+## 3. Microphone features — the sensitive part
 
-Captions/dictation stream room audio (which includes patient-related speech)
-to an STT engine. Decision matrix to resolve **with the DPO**:
+**Current implementation status (this is now real code, not a plan):**
+push-to-talk voice notes are implemented and working — mic audio is sent to
+OpenAI's `gpt-4o-transcribe` via a private local proxy
+(`glass-app/tools/transcription-server.mjs`, see ARCHITECTURE.md §6). This is
+a **demo/dev-speed choice made in code**, not the outcome of the decision
+matrix below — **do not point it at a real board's audio until the matrix is
+actually resolved with the DPO.** Today's implementation:
+
+- ✅ Push-to-talk (mic open only between two explicit taps, never continuous)
+- ✅ API key never in the glasses bundle (server-side only, entered interactively — never read from a plaintext file — see README "Voice notes")
+- ✅ Transcript held in memory only, cleared on session end, no on-device persistence
+- ❌ Not yet: EU-region guarantee, a signed DPA with OpenAI, or DPO sign-off
+- ❌ Not yet: a visible "transcribing" indicator on the *dashboard* side (today it's visible only to the wearer, on the HUD itself)
+
+Decision matrix to resolve **with the DPO** before any real patient audio:
 
 | Option | Residency | Effort | Notes |
 |---|---|---|---|
-| Self-hosted Whisper (uni server) | Best — data never leaves the institution | Ops + GPU | Recommended default for the pilot if latency acceptable |
+| Self-hosted Whisper (uni server) | Best — data never leaves the institution | Ops + GPU | Originally recommended default; still the safest choice for a real pilot |
 | EU-region cloud STT + DPA (Deepgram/Soniox) | Good with contract | Low | Needs vendor DPA (Auftragsverarbeitung) signed by the university |
-| Dev only: cloud STT on synthetic audio | n/a | — | Fine today; never point dev keys at real board audio |
+| **OpenAI `gpt-4o-transcribe` (current implementation)** | US-based, standard API terms | Already built | Fast to stand up; **swap before real patient audio** unless the university separately approves an OpenAI DPA |
+| Dev only: cloud STT on synthetic/demo audio | n/a | — | Fine today (all current test data is invented); never point at real board audio |
 
-Additional rules regardless of provider: visible "transcribing" state on the
-dashboard so **all participants know** (transparency, §26 BDSG territory for
-staff, consent handling via the board's existing recording workflow);
-push-to-talk for dictation (mic open only while held); transcripts land in the
-existing notes store with the same access control as typed notes.
+Additional rules regardless of provider: visible "transcribing" state so
+**all participants know** (transparency, §26 BDSG territory for staff, consent
+handling via the board's existing recording workflow) — dashboard-side
+indicator is still a gap, see above; push-to-talk for dictation (mic open only
+between explicit taps, already implemented); transcripts should land in the
+same access-controlled notes store as typed notes once the dashboard side
+exists (today they live only in the glass app's in-memory Notes card).
 
 ## 4. Checklist before pilot with real data
 
 - [ ] DPO review of this document + data-flow diagram (ARCHITECTURE.md §3)
 - [ ] Ethics/protocol amendment covering the wearable modality
 - [ ] Verify Even App's data handling (no cloud mirroring of HUD content) and record it
-- [ ] STT provider decided + DPA or self-hosted deployment done (if P2 enabled)
+- [ ] STT provider swapped from the demo OpenAI proxy to a DPO-approved option (self-hosted Whisper or an EU-region vendor with a signed DPA) — see §3
 - [ ] Participant information sheet updated (glasses have no camera — say it explicitly, it helps acceptance)
 - [ ] Pen-test pass over token service exposure for the new client type

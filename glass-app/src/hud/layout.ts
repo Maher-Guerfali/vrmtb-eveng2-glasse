@@ -31,7 +31,9 @@ export const MAX_LINE_CHARS = 44;
 export const ID_HEADER = 1;
 export const ID_BODY_FIRST = 2; // body rows occupy 2..6
 export const ID_FOOTER = 7;
+export const ID_INPUT_CAPTURE = 8;
 
 export const NAME_HEADER = 'hdr';
 export const NAME_FOOTER = 'ftr';
+export const NAME_INPUT_CAPTURE = 'input-capture';
 export const nameBody = (row: number): string => `b${row}`;

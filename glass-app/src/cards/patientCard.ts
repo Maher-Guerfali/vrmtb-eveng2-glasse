@@ -10,6 +10,16 @@ export class PatientCard implements Card {
 
   /** Set by wearGuard: blank PHI while the glasses are off / in the case. */
   privacyBlanked = false;
+  private detailPage = 0;
+
+  nextDetail(delta: number): boolean {
+    const next = Math.max(0, Math.min(1, this.detailPage + delta));
+    const changed = next !== this.detailPage;
+    this.detailPage = next;
+    return changed;
+  }
+
+  resetDetail(): void { this.detailPage = 0; }
 
   render(store: BoardStore): CardContent {
     if (this.privacyBlanked) {
@@ -25,19 +35,27 @@ export class PatientCard implements Card {
       };
     }
 
-    // Exactly 5 body lines: identity, staging, receptors, history, question.
-    // History collapses to one line; the question wins the last slot because
-    // it is what the board actually needs from the wearer.
+    if (this.detailPage === 1) {
+      return {
+        title: `Patient · ${p.pseudonym} · history`,
+        lines: [
+          'HISTORY',
+          ...p.historyLines,
+          p.boardQuestion ? `BOARD Q  ${p.boardQuestion}` : '',
+        ],
+        footer: 'swipe=details · dbltap=list · tap=dictate',
+      };
+    }
     return {
       title: `Patient · ${p.pseudonym}`,
       lines: [
-        p.ageLine,
-        p.stagingLine,
-        p.receptorLine,
-        p.historyLines.join(' · '),
-        p.boardQuestion ? `? ${p.boardQuestion}` : '',
+        `DEMOGRAPHICS  ${p.ageLine}`,
+        `STAGING       ${p.stagingLine}`,
+        `BIOMARKERS    ${p.receptorLine}`,
+        '────────────────────────────',
+        'Swipe for history and board question',
       ],
-      footer: '‹ › cards · ⨯⨯ = board',
+      footer: 'swipe = details · double tap = list · tap = dictate',
     };
   }
 }

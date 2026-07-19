@@ -13,7 +13,7 @@ app for the **Even Realities G2** smart glasses.
 | [vrmtb-unity](https://github.com/Maher-Guerfali/vrmtb-unity) | Quest 3 / Vision Pro | Immersive station: 3D volume viewer, embedded dashboard |
 | [vr-mtb-web](https://github.com/Maher-Guerfali/vr-mtb-web) | Browser / embedded WebView | Dashboard: agenda, patient data, AI, notes, chat |
 | [vrmtb-kotlin-glass](https://github.com/Maher-Guerfali/vrmtb-kotlin-glass) | Rokid AI glasses | Voice participant (mic + camera, RAM-constrained) |
-| **this repo** | **Even G2** | **Silent, glanceable HUD: agenda, patient snapshot, captions, dictation, decisions** |
+| **this repo** | **Even G2** | **Silent, glanceable HUD: agenda, patient snapshot, voice-dictated notes, decisions** |
 
 ## Why the G2 fits this project
 
@@ -49,13 +49,36 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 ```
 
 - **In the browser** (no glasses needed): a mock bridge renders the HUD pages
-  into a green-on-black preview canvas and a scripted mock tumor board drives
-  card updates. Arrow keys = touchpad swipes, Enter = tap, Backspace = double-tap.
+  into a green-on-black preview canvas. Arrow keys = touchpad swipes, Enter =
+  tap, Backspace = double-tap. The mock also simulates a granted microphone
+  (silent placeholder audio) so the full dictation flow — including the real
+  network call to the transcription server — is testable with no hardware.
 - **On device**: the same code detects the real Even App bridge and renders to
   the glasses. Sideload via QR from the [Even Hub dev portal](https://hub.evenrealities.com/).
+- **Navigation** is menu-driven, not a single swipe-through deck — the **Menu**
+  card (home) opens **Board** (read-only meeting overview: agenda, presenter,
+  elapsed time, recording status), **Patient list** (swipe to browse, tap to
+  open — browsing never changes what's on anyone else's screen until you
+  commit with a tap), **Patient** (demographics/staging/biomarkers, swipe for
+  a second page of history + the board's question), and **Notes** (session
+  voice notes). Double-tap from almost anywhere returns to the menu.
+- **Voice notes**: from the Patient card, tap once to start recording (glasses
+  mic), tap again to stop and transcribe — see "Voice notes" below.
 - **Live sync**: `src/sync/liveKitSync.ts` connects to the existing VR-MTB
   LiveKit room (token service from `vrmtb-infra`) — enable it with URL params
   once the dashboard publishes the `vrmtb.hud` topic (see ARCHITECTURE.md).
+  Until then the app runs on the static mock board (see URL params below).
+
+### URL params (no rebuild needed)
+
+| Param | Effect |
+|---|---|
+| `?bridge=mock` | Force the browser HUD preview even inside the Even App (phone-screen debugging) |
+| `?mirror=1` | Render to the glasses **and** the phone screen at once — see "Recording a demo" |
+| `?step=<seconds>` | Auto-advance the mock board's active case every N seconds (off by default — the board stays still until you navigate it) |
+| `?privacy=1` | Enable wear-state PHI blanking (off by default during dev/demo — see COMPLIANCE.md) |
+| `?transcribe_url=<url>` | Point dictation at a transcription server other than the default `http://192.168.178.65:8788/api/transcribe` |
+| `?sync=livekit&token_url=…&room=…&identity=…` | Use the real LiveKit board instead of mock data |
 
 ## Installing on the glasses (QR sideload)
 
@@ -89,15 +112,60 @@ just a file.
    Even Hub app — no QR, no shared Wi-Fi needed afterward.
 
 Note: a packaged install launches with no URL query params, so it always runs
-in **mock-data mode** (see below) — exactly what you want for a demo/recording
-to send around. `app.json` currently declares zero permissions (no network) to
-match that; add the `network` permission there once `?sync=livekit` mode is
-promoted out of dev-only use (see ARCHITECTURE.md §3).
+on the static mock board (see below) rather than live LiveKit sync. Dictation
+still works from a packaged install — it only needs the `network` permission
+(already declared in `app.json`) to reach the transcription server, not the
+`?sync=livekit` param.
 
 The app ships with **static demo data** (three invented breast-cancer cases in
-`src/sync/mockSync.ts`) and needs no backend: ideal for screen recordings.
-`?step=25` slows the scripted board to 25 s per advance; `?bridge=mock` forces
-the browser preview even inside the Even App.
+`src/sync/mockSync.ts`) and needs no backend for navigation: ideal for screen
+recordings. `?step=25` auto-advances the board case every 25 s if you want a
+hands-off demo; `?bridge=mock` forces the browser preview even inside the Even
+App.
+
+## Voice notes (dictation)
+
+Tap once on the Patient card to start recording (glasses mic), tap again to
+stop — the recording is sent to a small **private, local transcription
+server** (`glass-app/tools/transcription-server.mjs`), which forwards it to
+OpenAI's transcription API and returns the text, saved to the Notes card. The
+proxy exists so the glasses' JS bundle never touches the API key directly —
+the key stays server-side, on your PC only.
+
+**Start it** (needs an OpenAI API key — see "Do I need a ChatGPT/OpenAI API
+key?" below):
+
+```
+cd glass-app
+npm run transcribe-server
+```
+
+This launches `tools/start-transcription-server.ps1`, which prompts for the
+key with hidden input (`Read-Host -AsSecureString`) and never writes it to
+disk — the key only exists in that PowerShell process's memory for as long as
+the server runs. This is deliberately **interactive-only**: no script or agent
+reads a stored key from disk to start it, by design. If you'd rather manage
+the key as a file for repeated local runs, put `OPENAI_API_KEY=sk-...` in
+`glass-app/.env` (gitignored, never `.env.txt` — plain `.env` only) and run
+`npm run transcribe-server:raw` instead, which reads `process.env` directly
+without prompting.
+
+The server listens on port 8788 on your LAN IP (matching the default
+`?transcribe_url`), and CORS-allows any origin so the Even App's WebView can
+reach it. Without it running, dictation fails gracefully — "Mic blocked" if
+`setMic` itself fails, or "Server unreachable" after recording if the POST
+can't connect — never a crash.
+
+### Do I need a ChatGPT/OpenAI API key?
+
+Yes, for this specific implementation — the transcription server calls
+OpenAI's `gpt-4o-transcribe` model, which needs an `OPENAI_API_KEY` from
+[platform.openai.com](https://platform.openai.com/). That key is **never**
+part of the glasses bundle; it lives only in the transcription server's
+process environment on your PC (see above). This is a demo-stage choice for
+speed — COMPLIANCE.md's original recommendation for real patient audio was a
+self-hosted model (no cloud vendor, no per-key cost); revisit that decision
+before pointing this at a real board (see COMPLIANCE.md §3, updated).
 
 ### Recording a demo
 
@@ -118,8 +186,12 @@ through the lens), so three options, best first:
 
 - [x] Platform research (hardware, SDK 0.0.12 API surface verified from package types)
 - [x] Strategy, architecture, compliance, roadmap docs
-- [x] App scaffold: card engine, HUD composer, mock bridge + browser preview, mock board sync
+- [x] App scaffold: menu-driven navigation (Board / Patient list / Patient / Notes)
+- [x] Manual patient control: browse-then-commit selection, independent of any auto-advancing timer
+- [x] Voice dictation: mic capture → private local transcription proxy → OpenAI → note, verified end to end
+- [x] On-device validation with a physical G2 (found and fixed the real root cause of unresponsive touch input — see ARCHITECTURE.md §5)
+- [x] `.ehpk` packaging for teammate distribution (`npm run pack`, Even Hub portal import)
 - [x] LiveKit sync client (behind config, needs `vrmtb.hud` publisher in the dashboard)
-- [ ] STT captions/dictation (interface stubbed — provider decision pending, see COMPLIANCE.md)
-- [ ] On-device validation with a physical G2
-- [ ] Dashboard-side `vrmtb.hud` publisher (small change in vr-mtb-web)
+- [ ] Dashboard-side `vrmtb.hud` publisher (small change in vr-mtb-web — in progress)
+- [ ] STT provider decision for real patient audio (currently OpenAI cloud for demo speed; self-hosted recommended before real use — see COMPLIANCE.md §3)
+- [ ] Hands-free voice commands (scaffolded in `src/stt/webSpeech.ts` / `src/voice/commands.ts`, not yet wired in)

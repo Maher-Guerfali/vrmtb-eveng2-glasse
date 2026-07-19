@@ -45,7 +45,7 @@ async function boot(): Promise<void> {
   const sync = await pickSync(params);
   console.info(`[glance] bridge=${bridge.kind} sync=${sync.label}`);
 
-  const app = new GlanceApp(bridge, store, sync);
+  const app = new GlanceApp(bridge, store, sync, params.get('privacy') === '1');
   await app.start();
 }
 

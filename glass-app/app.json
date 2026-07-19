@@ -2,11 +2,20 @@
   "package_id": "com.vrmtb.glance",
   "edition": "202601",
   "name": "VR-MTB Glance",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.12",
   "entrypoint": "index.html",
-  "permissions": [],
+  "permissions": [
+    {
+      "name": "g2-microphone",
+      "desc": "Record a dictation note after the wearer taps the glasses control."
+    },
+    {
+      "name": "network",
+      "desc": "Send a finished dictation recording to the user's private transcription server."
+    }
+  ],
   "supported_languages": [
     "en",
     "de"

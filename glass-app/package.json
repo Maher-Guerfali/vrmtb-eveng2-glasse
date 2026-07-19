@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "transcribe-server": "powershell -ExecutionPolicy Bypass -File tools/start-transcription-server.ps1",
+    "transcribe-server:raw": "node tools/transcription-server.mjs",
     "pack": "npm run build && evenhub pack app.json dist -o vrmtb-glance.ehpk"
   },
   "dependencies": {

@@ -41,6 +41,12 @@ export class BoardStore {
     return id ? this.patients.get(id) : undefined;
   }
 
+  selectActiveCase(caseId: string): void {
+    if (!this.board?.cases.some((item) => item.caseId === caseId)) return;
+    this.board = { ...this.board, activeCaseId: caseId };
+    this.changeCbs.forEach((cb) => cb());
+  }
+
   /** True when no sync message arrived for a while - cards show a stale marker. */
   isStale(maxAgeMs = 30_000): boolean {
     return this.lastMessageAt > 0 && Date.now() - this.lastMessageAt > maxAgeMs;

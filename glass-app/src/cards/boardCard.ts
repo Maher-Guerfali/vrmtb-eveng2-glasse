@@ -43,7 +43,7 @@ export class BoardCard implements Card {
     return {
       title: b.meetingTitle,
       lines: [...rows, status],
-      footer: '‹ › cards · tap = patient',
+      footer: 'dbltap=menu',
     };
   }
 }

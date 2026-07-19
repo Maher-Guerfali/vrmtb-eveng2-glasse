@@ -56,7 +56,7 @@ export class MockSync implements BoardSync {
   private timer: ReturnType<typeof setInterval> | undefined;
   private tick = 0;
 
-  constructor(private stepMs = 12_000) {}
+  constructor(private stepMs?: number) {}
 
   async start(store: BoardStore): Promise<void> {
     const publish = () => {
@@ -66,7 +66,7 @@ export class MockSync implements BoardSync {
         type: 'board',
         payload: {
           meetingTitle: 'Breast MTB · demo',
-          startedAtIso: new Date(Date.now() - this.tick * this.stepMs).toISOString(),
+          startedAtIso: new Date(Date.now() - this.tick * (this.stepMs ?? 0)).toISOString(),
           presenter: 'Dr. Weber',
           recording: this.tick >= 1,
           activeCaseId: CASES[activeIdx].board.caseId,
@@ -89,7 +89,10 @@ export class MockSync implements BoardSync {
     };
 
     publish();
-    this.timer = setInterval(publish, this.stepMs);
+    // Keep the board still by default; auto-advance exists only for an
+    // explicit ?step=<seconds> recording/demo session.
+    const stepMs = this.stepMs;
+    if (stepMs && stepMs > 0) this.timer = setInterval(publish, stepMs);
   }
 
   async stop(): Promise<void> {

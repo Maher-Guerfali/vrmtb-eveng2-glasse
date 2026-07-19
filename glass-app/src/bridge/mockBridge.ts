@@ -14,7 +14,9 @@ import type {
 export function createMockBridge(root: HTMLElement): GlassBridge {
   const inputCbs = new Set<(ev: GlassInputEvent) => void>();
   const wearCbs = new Set<(s: WearState) => void>();
+  const audioCbs = new Set<(chunk: Uint8Array) => void>();
   let wearing = true;
+  let micTimer: ReturnType<typeof setInterval> | undefined;
 
   root.innerHTML = `
     <h2 style="font-weight:600">VR-MTB Glance — browser preview</h2>
@@ -99,15 +101,30 @@ export function createMockBridge(root: HTMLElement): GlassBridge {
       return () => wearCbs.delete(cb);
     },
 
-    onAudioPcm() {
-      return () => undefined; // no mic simulation in the preview (P2)
+    onAudioPcm(cb) {
+      audioCbs.add(cb);
+      return () => audioCbs.delete(cb);
     },
 
-    async setMic() {
-      return false;
+    // Simulates a granted mic so the record -> transcribe UI flow (including
+    // the real fetch to the transcription server) is exercisable in the
+    // browser without any G2 hardware. Chunks are silent placeholder bytes -
+    // enough to make `pcm.length > 0` so the app proceeds to actually POST to
+    // the transcription server (useful to test connectivity/CORS end to end),
+    // but not real speech, so expect an empty/garbage transcript back.
+    async setMic(open) {
+      if (micTimer) { clearInterval(micTimer); micTimer = undefined; }
+      if (open) {
+        micTimer = setInterval(() => {
+          const chunk = new Uint8Array(3200); // ~100ms of silence at 16kHz/16-bit mono
+          audioCbs.forEach((cb) => cb(chunk));
+        }, 100);
+      }
+      return true;
     },
 
     async shutdown() {
+      if (micTimer) clearInterval(micTimer);
       hud.innerHTML = '<div style="padding:16px">— app exited —</div>';
     },
   };

@@ -10,6 +10,8 @@ export interface HudTextBox {
   w: number;
   h: number;
   content: string;
+  /** One full-screen transparent container captures G2 touchpad/R1 gestures. */
+  captureInput?: boolean;
 }
 
 export interface HudPage {
@@ -28,7 +30,8 @@ export type GlassInputEvent =
 
 export interface WearState {
   connected: boolean;
-  wearing: boolean;
+  /** Undefined until the Even host has reported a reliable wear state. */
+  wearing?: boolean;
   inCase: boolean;
   batteryLevel?: number;
 }

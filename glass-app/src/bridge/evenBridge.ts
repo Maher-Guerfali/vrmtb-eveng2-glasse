@@ -24,6 +24,7 @@ import type {
   InputSource,
   WearState,
 } from './types';
+import { NAME_HEADER } from '../hud/layout';
 
 function toInputSource(src: EventSourceType | undefined): InputSource {
   switch (src) {
@@ -46,7 +47,7 @@ class EvenGlassBridge implements GlassBridge {
     bridge.onDeviceStatusChanged((status: DeviceStatus) => {
       const s: WearState = {
         connected: status.isConnected(),
-        wearing: status.isWearing === true,
+        wearing: status.isWearing,
         inCase: status.isInCase === true,
         batteryLevel: status.batteryLevel,
       };
@@ -59,13 +60,23 @@ class EvenGlassBridge implements GlassBridge {
       this.audioCbs.forEach((cb) => cb(event.audioEvent!.audioPcm));
       return;
     }
-    // Touch/system events arrive as sysEvent; list/text item events also carry
-    // an eventType but v1 renders text-only pages, so sysEvent is the router.
-    const sys = event.sysEvent;
-    if (!sys) return;
-    const source = toInputSource(sys.eventSource);
+    // A capture-enabled text container emits textEvent on some host versions,
+    // while others send the same gesture as sysEvent. Accept both forms.
+    const input = event.sysEvent ?? event.textEvent;
+    if (!input) return;
+    const source = toInputSource(event.sysEvent?.eventSource);
     let ev: GlassInputEvent | null = null;
-    switch (sys.eventType) {
+    // SDK compatibility: CLICK_EVENT has the wire value 0. Some Even App
+    // versions normalize it to undefined, while scroll and double-click keep
+    // their values. A captured header text event (or source-bearing sys event)
+    // with no type is therefore a single tap, not an unknown event.
+    if (input.eventType === undefined) {
+      const isCapturedTextTap = event.textEvent?.containerName === NAME_HEADER;
+      const isSystemTap = event.sysEvent?.eventSource !== undefined;
+      if (isCapturedTextTap || isSystemTap) ev = { kind: 'tap', source };
+      else return;
+    } else {
+    switch (input.eventType) {
       case OsEventTypeList.CLICK_EVENT: ev = { kind: 'tap', source }; break;
       case OsEventTypeList.DOUBLE_CLICK_EVENT: ev = { kind: 'doubleTap', source }; break;
       // Scroll direction naming follows the OS ("top"/"bottom"); we translate
@@ -79,6 +90,7 @@ class EvenGlassBridge implements GlassBridge {
         ev = { kind: 'exit' };
         break;
       default: return; // IMU_DATA_REPORT etc. - unused in v1
+    }
     }
     this.inputCbs.forEach((cb) => cb(ev!));
   }
@@ -94,7 +106,9 @@ class EvenGlassBridge implements GlassBridge {
           width: t.w,
           height: t.h,
           content: t.content,
-          isEventCapture: 0,
+          // Exactly one full-screen transparent capture container is emitted
+          // by the composer, which makes touchpad/R1 gestures reliable.
+          isEventCapture: t.captureInput ? 1 : 0,
           zOrderIndex: t.id,
         }),
     );
