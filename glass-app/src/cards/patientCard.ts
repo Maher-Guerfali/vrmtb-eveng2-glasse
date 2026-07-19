@@ -2,9 +2,13 @@ import type { CardContent } from '../hud/composer';
 import type { BoardStore } from '../sync/boardSync';
 import type { Card } from './types';
 
+const FOOTER = 'swipe=details · dbltap=list · tap=dictate';
+
 // Renders ONLY the whitelisted HudPatientSummary fields (COMPLIANCE.md §2).
 // If a field isn't in the protocol, it cannot appear on the HUD - that is the
 // point of the narrow type, so never widen this card past the protocol.
+// The schema is disease-agnostic (dx/conditions/labs/allergies), matching
+// vr-mtb-web's real patient schema rather than a breast-cancer-specific one.
 export class PatientCard implements Card {
   readonly id = 'patient';
 
@@ -36,26 +40,27 @@ export class PatientCard implements Card {
     }
 
     if (this.detailPage === 1) {
+      const lines = [
+        'CONDITIONS',
+        ...p.conditionLines,
+        p.boardQuestion ? `BOARD Q  ${p.boardQuestion}` : '',
+      ].filter(Boolean);
       return {
-        title: `Patient · ${p.pseudonym} · history`,
-        lines: [
-          'HISTORY',
-          ...p.historyLines,
-          p.boardQuestion ? `BOARD Q  ${p.boardQuestion}` : '',
-        ],
-        footer: 'swipe=details · dbltap=list · tap=dictate',
+        title: `Patient · ${p.caseId} · conditions`,
+        lines,
+        footer: FOOTER,
       };
     }
+    const lines = [
+      p.dxLine,
+      ...p.abnormalLabLines.map((l) => `LAB  ${l}`),
+      p.allergyLine ? `ALLERGY  ${p.allergyLine}` : '',
+      'Swipe for conditions and board question',
+    ].filter(Boolean);
     return {
-      title: `Patient · ${p.pseudonym}`,
-      lines: [
-        `DEMOGRAPHICS  ${p.ageLine}`,
-        `STAGING       ${p.stagingLine}`,
-        `BIOMARKERS    ${p.receptorLine}`,
-        '────────────────────────────',
-        'Swipe for history and board question',
-      ],
-      footer: 'swipe = details · double tap = list · tap = dictate',
+      title: `Patient · ${p.caseId}`,
+      lines,
+      footer: FOOTER,
     };
   }
 }

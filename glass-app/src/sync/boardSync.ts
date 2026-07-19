@@ -1,10 +1,10 @@
 // In-memory store of the current board state (nothing is ever persisted -
 // PHI evaporates with the page, see docs/COMPLIANCE.md) plus the interface
-// every sync source implements (mock script today, LiveKit in production).
+// every sync source implements (MockSync's scripted demo, or LiveKitSync
+// against the real vr-mtb-web backend/room).
 
 import type {
   HudBoardState,
-  HudEnvelope,
   HudNotification,
   HudPatientSummary,
 } from './protocol';
@@ -17,23 +17,20 @@ export class BoardStore {
   private changeCbs = new Set<() => void>();
   private notifyCbs = new Set<(n: HudNotification) => void>();
 
-  apply(envelope: HudEnvelope): void {
+  setBoard(board: HudBoardState): void {
     this.lastMessageAt = Date.now();
-    switch (envelope.type) {
-      case 'board':
-        this.board = envelope.payload;
-        break;
-      case 'patient':
-        this.patients.set(envelope.payload.caseId, envelope.payload);
-        break;
-      case 'notify':
-        this.notifyCbs.forEach((cb) => cb(envelope.payload));
-        return; // notifications are transient, not state
-      case 'decision':
-        // P3: surface on the Decide card. Stored nowhere yet.
-        return;
-    }
+    this.board = board;
     this.changeCbs.forEach((cb) => cb());
+  }
+
+  setPatient(patient: HudPatientSummary): void {
+    this.lastMessageAt = Date.now();
+    this.patients.set(patient.caseId, patient);
+    this.changeCbs.forEach((cb) => cb());
+  }
+
+  notify(n: HudNotification): void {
+    this.notifyCbs.forEach((cb) => cb(n));
   }
 
   activePatient(): HudPatientSummary | undefined {
@@ -73,4 +70,11 @@ export interface BoardSync {
   readonly label: string;
   start(store: BoardStore): Promise<void>;
   stop(): Promise<void>;
+  /**
+   * Push a wearer-initiated action back out (e.g. selecting a patient on the
+   * glasses broadcasts the same 'selectPatient' command the dashboard sends,
+   * so every connected client - including this one, echoed back - stays in
+   * sync). Optional: MockSync has nothing to broadcast to.
+   */
+  sendCommand?(command: string, args?: Record<string, unknown>): void | Promise<void>;
 }

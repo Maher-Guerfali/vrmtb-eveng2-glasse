@@ -56,17 +56,21 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 - **On device**: the same code detects the real Even App bridge and renders to
   the glasses. Sideload via QR from the [Even Hub dev portal](https://hub.evenrealities.com/).
 - **Navigation** is menu-driven, not a single swipe-through deck — the **Menu**
-  card (home) opens **Board** (read-only meeting overview: agenda, presenter,
-  elapsed time, recording status), **Patient list** (swipe to browse, tap to
-  open — browsing never changes what's on anyone else's screen until you
-  commit with a tap), **Patient** (demographics/staging/biomarkers, swipe for
-  a second page of history + the board's question), and **Notes** (session
-  voice notes). Double-tap from almost anywhere returns to the menu.
+  card (home) opens **Board** (read-only meeting overview), **Patient list**
+  (swipe to browse, tap to open — browsing never changes what's on anyone
+  else's screen until you commit with a tap), **Patient** (diagnosis, flagged
+  labs, allergies; swipe for a second page of conditions + the board's
+  question), and **Notes** (session voice notes). Double-tap from almost
+  anywhere returns to the menu.
 - **Voice notes**: from the Patient card, tap once to start recording (glasses
   mic), tap again to stop and transcribe — see "Voice notes" below.
-- **Live sync**: `src/sync/liveKitSync.ts` connects to the existing VR-MTB
-  LiveKit room (token service from `vrmtb-infra`) — enable it with URL params
-  once the dashboard publishes the `vrmtb.hud` topic (see ARCHITECTURE.md).
+- **Live sync**: `src/sync/liveKitSync.ts` talks to the **real** vr-mtb-web
+  backend directly — `POST /api/rooms/join`, `GET /api/session`, and the same
+  LiveKit `activePatient`/`command` data-channel topics the dashboard's own
+  voice commands and MCP server use. No changes to vr-mtb-web are needed;
+  selecting a patient on the glasses even broadcasts back to every connected
+  dashboard via the same path the dashboard's own UI uses (see ARCHITECTURE.md
+  §2-3). Enable with `?sync=livekit&backend=http://host:8787&room=MTB-DEV`.
   Until then the app runs on the static mock board (see URL params below).
 
 ### URL params (no rebuild needed)
@@ -191,7 +195,9 @@ through the lens), so three options, best first:
 - [x] Voice dictation: mic capture → private local transcription proxy → OpenAI → note, verified end to end
 - [x] On-device validation with a physical G2 (found and fixed the real root cause of unresponsive touch input — see ARCHITECTURE.md §5)
 - [x] `.ehpk` packaging for teammate distribution (`npm run pack`, Even Hub portal import)
-- [x] LiveKit sync client (behind config, needs `vrmtb.hud` publisher in the dashboard)
-- [ ] Dashboard-side `vrmtb.hud` publisher (small change in vr-mtb-web — in progress)
+- [x] LiveKit sync client speaking vr-mtb-web's **real** backend protocol
+      directly (verified against its actual source — no dashboard changes
+      needed; two-way, not just a mirror — see ARCHITECTURE.md §2-3)
+- [ ] Hand-tested against a running vr-mtb-web backend + LiveKit server (built and reviewed against source, not yet run live)
 - [ ] STT provider decision for real patient audio (currently OpenAI cloud for demo speed; self-hosted recommended before real use — see COMPLIANCE.md §3)
 - [ ] Hands-free voice commands (scaffolded in `src/stt/webSpeech.ts` / `src/voice/commands.ts`, not yet wired in)

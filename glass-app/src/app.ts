@@ -105,7 +105,14 @@ export class GlanceApp {
   private handleTap(): void {
     if (this.cardIndex === 0) {
       const caseId = this.patientListCard.selected(this.store);
-      if (caseId) this.store.selectActiveCase(caseId);
+      if (caseId) {
+        this.store.selectActiveCase(caseId);
+        // Broadcasts to every other connected client (dashboard, other
+        // glasses, MCP-driven assistants) via the same 'selectPatient'
+        // command the dashboard's own UI/voice commands use - a no-op on
+        // MockSync, which has nothing to broadcast to.
+        void this.sync.sendCommand?.('selectPatient', { patientId: caseId });
+      }
       this.patientCard.resetDetail();
       this.showCard(1);
       return;

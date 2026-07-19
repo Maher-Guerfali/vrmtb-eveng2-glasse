@@ -29,12 +29,24 @@ fully manual now (see above); confirm with an actual colleague test.
 
 **Goal:** the glasses mirror the real dashboard during a test board.
 
-- [ ] vr-mtb-web: publish `vrmtb.hud` (board + patient + notify envelopes,
-      full-state, re-publish on join) — small PR against the dashboard
-- [ ] Enable `liveKitSync` (token from existing voice-token service)
-- [ ] Notifications from `vrmtb.annotation` ("annotation added by …")
+- [x] **Plan corrected after reading vr-mtb-web's actual source**: no new
+      `vrmtb.hud` topic/dashboard PR needed — the real backend already
+      exposes everything (`POST /api/rooms/join`, `GET /api/session`, the
+      `activePatient`/`command` LiveKit data-channel topics also used by the
+      dashboard's own voice commands and MCP server). See ARCHITECTURE.md §2-3.
+- [x] `liveKitSync.ts` rewritten to speak that real protocol directly:
+      joins via the real room registry, fetches+curates `/api/session`,
+      reacts to `activePatient`/`selectPatient`/`nextPatient`/`previousPatient`
+      messages, and **broadcasts back** (`PATCH /api/session/active-patient`)
+      when the wearer selects a patient on the glasses — a two-way
+      participant, not a read-only mirror
+      (`?sync=livekit&backend=...&room=...` — see README)
+- [ ] Test against a real running vr-mtb-web backend + LiveKit server (built
+      and reviewed against the source, not yet hand-tested live end to end)
 - [ ] Stale-data marker + reconnect behavior verified by pulling Wi-Fi
 - [ ] `wearGuard` on-device verification (blank on take-off / in-case)
+- [ ] `vrmtb.annotation` notifications — deferred; separate producer/consumer
+      set from the room's own command channel, not blocking this phase
 
 **Exit gate:** hybrid test board where a G2 wearer, a Quest wearer, and a
 desktop user all track the same case switch within ~1 s.

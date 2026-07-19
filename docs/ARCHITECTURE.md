@@ -16,63 +16,86 @@ so `fetch`, WebSocket, and the **LiveKit JS SDK** all work.
 └───────────────────────────────┘        └───────────────┬────────────────────┘
                                                          │ WSS / HTTPS
                      ┌───────────────────────────────────┴───────────────┐
-                     │                vrmtb-infra                        │
-                     │  LiveKit server · voice-token service · AI · API  │
+                     │       vr-mtb-web/backend (Express + TS)           │
+                     │  rooms/join · session · MCP server                │
                      └──┬────────────────┬───────────────────┬──────────┘
                         │                │                   │
-                  vr-mtb-web        vrmtb-unity        vrmtb-kotlin-glass
-                  (dashboard)      (Quest 3 / AVP)         (Rokid)
+                  vr-mtb-web         livekit-server    vrmtb-unity /
+                  (dashboard)      (self-hosted SFU)  vrmtb-kotlin-glass
 ```
 
-## 2. Reuse of the existing contract
+(There is no separate "vrmtb-infra" repo — that name in older Unity code
+comments refers to this same backend, which lives inside vr-mtb-web/backend
+and is what both Unity's legacy `/api/voice/token` calls and this app's real
+integration below actually hit, confirmed by matching port 8787 and endpoint
+path. Corrected here after actually reading vr-mtb-web's source — see §2.)
 
-The ecosystem already shares one LiveKit room (dev room `tb-dev`) with:
+## 2. Reuse of the existing contract (verified against vr-mtb-web's real source, not assumed)
 
-- **Voice**: Unity `VoiceManager`, Rokid app, and dashboard publish/subscribe audio.
-- **Data**: topic `vrmtb.annotation` syncs 3D annotation add/remove/clear
-  (`AnnotationSyncService` in Unity rides on `VoiceManager`'s data channel).
-- **Tokens**: Node `voice-token` service (`vrmtb-infra/services/voice-token`,
-  dev: `http://<host>:8787/api/voice/token`) — same key pair for every client.
-- **Dashboard bridge contract** (`src/bridge/unityBridge.ts` in vr-mtb-web):
-  events like `ActivePatientChanged`, `OpenStudyRequested`, `DecisionRequested`,
-  `RecordActionRequested`; panels Agenda / Patient / AI / Record / Text.
+**Revision note:** this section originally proposed a new `vrmtb.hud` LiveKit
+topic that vr-mtb-web would need to implement. After actually reading that
+repo (cloned locally, `backend/` + `app/src/realtime|commands|domain`), that
+topic turned out to be unnecessary — everything a HUD needs already exists.
+The section below describes the real system as found, and §3 explains why
+the glass app targets it directly instead.
 
-The G2 app becomes the **fourth LiveKit client**: fetch a token, join the room,
-subscribe to data topics. No new transport, no new auth path.
+vr-mtb-web is a React + Vite dashboard with its own Express backend
+(`backend/`), **not** the simpler fixed-single-room design earlier drafts of
+this doc assumed:
 
-## 3. One new topic: `vrmtb.hud`
+- **Room join**: `POST /api/rooms/join {roomCode, identity, displayName}` →
+  `{url, token, roomId, isHost}`. Idempotent — creates the room on first
+  join, that caller becomes host. (The `GET /api/voice/token` endpoint still
+  exists but is explicitly legacy/dev-only — no room registry, no host
+  detection.)
+- **Session/patient data**: `GET /api/session` returns the full session +
+  patient list (Zod schema, `app/src/domain/schema.ts`) — **including PHI**
+  (`patient.name`, `patient.dob`). `PATCH /api/session/active-patient
+  {patientId, roomId?}` sets it server-side and, if `roomId` is given,
+  broadcasts the change live.
+- **Room data channel**: two topics, `RoomDataMessage` in
+  `app/src/realtime/types.ts` — `{topic:'activePatient', patientId}` and the
+  generic `{topic:'command', command, args?}` envelope. `command` is how the
+  dashboard's own Web Speech voice commands (`app/src/commands/registry.ts`:
+  `selectPatient`, `nextPatient`, `previousPatient`, `switchPanel`, …) and an
+  MCP server (`backend/src/mcp/server.ts`, `send_command` tool) already
+  control every connected dashboard identically — "a doctor said 'mute'"
+  and "an LLM told the room to mute" are indistinguishable to a receiver.
+- **No fixed dev room, no separate token-service key pair** — each `roomCode`
+  is created on demand by whoever joins it first.
 
-The glasses need a *curated, tiny* projection of board state — not the raw
-dashboard events. We introduce one data-channel topic, published by the
-dashboard (small addition to vr-mtb-web, which already owns agenda + active
-patient state):
+## 3. The G2 app is a fifth client, speaking this protocol directly
 
-```jsonc
-// topic "vrmtb.hud" — every message is one envelope, ≤ a few hundred bytes
-{ "v": 1, "type": "board",   "payload": { /* HudBoardState */ } }
-{ "v": 1, "type": "patient", "payload": { /* HudPatientSummary */ } }
-{ "v": 1, "type": "notify",  "payload": { /* HudNotification */ } }
-{ "v": 1, "type": "decision","payload": { /* HudDecisionPrompt */ } }
-```
+No changes to vr-mtb-web were made or are needed. `glass-app/src/sync/liveKitSync.ts`:
 
-TypeScript definitions live in `glass-app/src/sync/protocol.ts` and are written
-to be copy-shareable with vr-mtb-web (same field names as the dashboard's
-existing bridge events where they overlap). Design rules:
+1. Calls `POST /api/rooms/join` itself (same call the dashboard makes).
+2. Fetches `GET /api/session` once connected, and **immediately narrows it**
+   to `HudPatientSummary` (`protocol.ts`) — this mapping function is the one
+   place in glass-app allowed to see `name`/`dob`, and must never let them
+   reach the store. This is a stricter promise than the dashboard's own (a
+   personal wearable has a different loss/glance-over-shoulder risk than a
+   locked workstation) — see COMPLIANCE.md §2.
+3. Subscribes to the room data channel and reacts to `activePatient` and
+   `command` (`selectPatient`/`nextPatient`/`previousPatient`) messages —
+   the exact same messages a doctor's spoken command or the dashboard UI
+   already produces.
+4. **Writes back**: when the wearer taps to select a patient on the glasses,
+   `sendCommand('selectPatient', {patientId})` calls the same
+   `PATCH /api/session/active-patient` the dashboard would, so the choice is
+   server-authoritative and reaches every client, not just currently-open
+   ones. The G2 is a full participant, not a read-only mirror.
 
-- **Publisher curates, HUD renders.** The dashboard decides *what* the glasses
-  may see (pseudonymized snapshot fields only); the glass app only fits it into
-  576×288. PHI minimization happens at the publisher, not the wearable.
-- **Full-state messages, not diffs.** Each `board`/`patient` message is the
-  complete current state so a glass client that joins late (or reconnects after
-  BLE/Wi-Fi drop) is correct after one message. The dashboard re-publishes
-  state on participant join.
-- **Versioned envelope** (`v: 1`) so the dashboard and glasses can evolve
-  independently.
+`protocol.ts`'s `HudPatientSummary` was also generalized to match
+vr-mtb-web's actual (disease-agnostic) patient schema — `dx` / `conditions` /
+`labs` / `allergies` — rather than the breast-cancer-specific TNM/receptor
+fields this doc originally invented before the real schema was available to
+read. `MockSync`'s demo data uses the identical shape, so there is exactly
+one patient-summary model whether driven by the scripted demo or the real
+backend.
 
-Why not reuse `vrmtb.annotation`? Different producer, different consumer set,
-different privacy profile — a topic is free, mixing concerns is not. The G2 app
-does additionally *subscribe* to `vrmtb.annotation` in P1 purely to surface
-"annotation added by <identity>" notifications.
+`vrmtb.annotation` (Unity's 3D-annotation topic) is a separate concern with a
+different producer/consumer set and isn't part of this integration; revisit
+only if a future card wants to surface "annotation added by…" notifications.
 
 ## 4. Inside `glass-app/`
 

@@ -6,17 +6,21 @@ import { BoardStore, type BoardSync } from './sync/boardSync';
 import { MockSync } from './sync/mockSync';
 
 // Sync source selection (boot-time, URL-driven so no rebuild is needed):
-//   default                -> scripted mock board (browser demo + first device tests)
-//   ?sync=livekit&token_url=<voice-token-url>&room=tb-dev&identity=g2-maher
-//                          -> live board via the existing VR-MTB LiveKit room
+//   default -> scripted mock board (browser demo + first device tests)
+//   ?sync=livekit&backend=http://host:8787&room=MTB-DEV&identity=g2-maher&name=Dr.%20Maher
+//           -> the REAL vr-mtb-web backend/room (see sync/liveKitSync.ts) -
+//           speaks that repo's actual REST + LiveKit data-channel protocol,
+//           not a glasses-specific topic; no changes needed in vr-mtb-web.
 // livekit-client is ~170 kB gzipped, so it is only loaded when actually used.
 async function pickSync(params: URLSearchParams): Promise<BoardSync> {
   if (params.get('sync') === 'livekit') {
     const { LiveKitSync } = await import('./sync/liveKitSync');
+    const identity = params.get('identity') ?? `g2-${Math.random().toString(36).slice(2, 8)}`;
     return new LiveKitSync({
-      tokenUrl: params.get('token_url') ?? 'http://192.168.178.65:8787/api/voice/token',
-      room: params.get('room') ?? 'tb-dev',
-      identity: params.get('identity') ?? `g2-${Math.random().toString(36).slice(2, 8)}`,
+      backendUrl: params.get('backend') ?? 'http://192.168.178.65:8787',
+      roomCode: params.get('room') ?? 'MTB-DEV',
+      identity,
+      displayName: params.get('name') ?? identity,
     });
   }
   // ?step=25 slows the scripted board to one advance per 25 s - handy when

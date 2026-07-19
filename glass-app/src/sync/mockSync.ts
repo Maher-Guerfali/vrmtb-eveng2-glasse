@@ -6,38 +6,33 @@ import type { HudBoardState, HudPatientSummary } from './protocol';
 
 const CASES: { board: HudBoardState['cases'][number]; patient: HudPatientSummary }[] = [
   {
-    board: { caseId: 'c1', label: 'MTB-2026-012 · A.M.', status: 'pending' },
+    board: { caseId: 'c1', label: 'p1 · invasive NST', status: 'pending' },
     patient: {
       caseId: 'c1',
-      pseudonym: 'MTB-2026-012 · A.M.',
-      ageLine: '54 y · premenopausal',
-      stagingLine: 'cT2 cN1 M0 · G3 · invasive NST',
-      receptorLine: 'ER 90% · PR 10% · HER2 neg · Ki-67 35%',
-      historyLines: ['Core biopsy 07/26 · left, 28 mm', 'No prior systemic therapy'],
+      dxLine: 'Invasive breast carcinoma NST, left, cT2 cN1 M0',
+      conditionLines: ['C50.9 Invasive carcinoma NST (2026)'],
+      abnormalLabLines: ['Ki-67 35% POS'],
       boardQuestion: 'Neoadjuvant chemo vs. primary surgery?',
     },
   },
   {
-    board: { caseId: 'c2', label: 'MTB-2026-013 · R.S.', status: 'pending' },
+    board: { caseId: 'c2', label: 'p2 · invasive lobular', status: 'pending' },
     patient: {
       caseId: 'c2',
-      pseudonym: 'MTB-2026-013 · R.S.',
-      ageLine: '67 y · postmenopausal',
-      stagingLine: 'pT1c pN0 M0 · G2 · invasive lobular',
-      receptorLine: 'ER 100% · PR 80% · HER2 neg · Ki-67 12%',
-      historyLines: ['s/p BET + SLNB 06/26', 'Oncotype DX pending'],
+      dxLine: 'Invasive lobular carcinoma, pT1c pN0 M0',
+      conditionLines: ['C50.9 Invasive lobular carcinoma (2026)'],
+      abnormalLabLines: [],
+      allergyLine: 'Penicillin (SEVERE)',
       boardQuestion: 'Adjuvant endocrine only vs. add chemo?',
     },
   },
   {
-    board: { caseId: 'c3', label: 'MTB-2026-014 · K.B.', status: 'pending' },
+    board: { caseId: 'c3', label: 'p3 · TNBC', status: 'pending' },
     patient: {
       caseId: 'c3',
-      pseudonym: 'MTB-2026-014 · K.B.',
-      ageLine: '41 y · premenopausal · BRCA1+',
-      stagingLine: 'cT1c cN0 M0 · G3 · TNBC',
-      receptorLine: 'ER neg · PR neg · HER2 neg · Ki-67 60%',
-      historyLines: ['MRI 07/26: unifocal, 14 mm', 'Genetic counseling done'],
+      dxLine: 'Triple-negative breast cancer, cT1c cN0 M0, BRCA1+',
+      conditionLines: ['C50.9 TNBC (2026)', 'Z15.01 BRCA1 carrier'],
+      abnormalLabLines: ['Ki-67 60% POS'],
       boardQuestion: 'Pembrolizumab per KEYNOTE-522 schema?',
     },
   },
@@ -61,30 +56,22 @@ export class MockSync implements BoardSync {
   async start(store: BoardStore): Promise<void> {
     const publish = () => {
       const activeIdx = Math.min(Math.floor(this.tick / 2), CASES.length - 1);
-      store.apply({
-        v: 1,
-        type: 'board',
-        payload: {
-          meetingTitle: 'Breast MTB · demo',
-          startedAtIso: new Date(Date.now() - this.tick * (this.stepMs ?? 0)).toISOString(),
-          presenter: 'Dr. Weber',
-          recording: this.tick >= 1,
-          activeCaseId: CASES[activeIdx].board.caseId,
-          cases: CASES.map((c, i) => ({
-            ...c.board,
-            status: i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending',
-          })),
-        },
+      store.setBoard({
+        meetingTitle: 'Breast MTB · demo',
+        startedAtIso: new Date(Date.now() - this.tick * (this.stepMs ?? 0)).toISOString(),
+        presenter: 'Dr. Weber',
+        recording: this.tick >= 1,
+        activeCaseId: CASES[activeIdx].board.caseId,
+        cases: CASES.map((c, i) => ({
+          ...c.board,
+          status: i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending',
+        })),
       });
       // Full-state semantics: (re)send every patient so late joiners work,
-      // exactly like the real dashboard publisher will.
-      for (const c of CASES) {
-        store.apply({ v: 1, type: 'patient', payload: c.patient });
-      }
+      // exactly like a real reconnect against vr-mtb-web re-fetches /api/session.
+      for (const c of CASES) store.setPatient(c.patient);
       const note = NOTIFICATIONS[this.tick % NOTIFICATIONS.length];
-      if (this.tick > 0 && note) {
-        store.apply({ v: 1, type: 'notify', payload: { text: note } });
-      }
+      if (this.tick > 0 && note) store.notify({ text: note });
       this.tick += 1;
     };
 
