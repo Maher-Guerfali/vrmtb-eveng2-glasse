@@ -22,7 +22,7 @@ export class WebSpeechSttProvider implements SttProvider {
   readonly label = 'web speech';
   private recognition?: Recognition;
 
-  async start(onSegment: (seg: SttSegment) => void): Promise<void> {
+  async start(onSegment: (seg: SttSegment) => void, onEnd?: () => void): Promise<void> {
     const browser = window as typeof window & {
       SpeechRecognition?: RecognitionConstructor;
       webkitSpeechRecognition?: RecognitionConstructor;
@@ -41,6 +41,14 @@ export class WebSpeechSttProvider implements SttProvider {
       }
     };
     recognition.onerror = (event) => console.warn('[stt]', event.error);
+    // Spontaneous end (silence timeout, engine hiccup) - not a stop() we
+    // asked for; stop() below replaces this handler before stopping.
+    recognition.onend = () => {
+      if (this.recognition === recognition) {
+        this.recognition = undefined;
+        onEnd?.();
+      }
+    };
     this.recognition = recognition;
     recognition.start();
   }

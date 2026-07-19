@@ -15,6 +15,9 @@ export class NotesCard implements Card {
 
   setDraft(text: string): void { this.draft = text.trim(); }
 
+  /** Newest-first, for spoken readback ("read notes"). */
+  recent(count = 3): string[] { return this.notes.slice(0, count); }
+
   render(_store: BoardStore): CardContent {
     return {
       title: 'Notes',

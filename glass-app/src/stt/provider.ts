@@ -14,7 +14,10 @@ export interface SttSegment {
 
 export interface SttProvider {
   readonly label: string;
-  start(onSegment: (seg: SttSegment) => void): Promise<void>;
+  /** onEnd fires only when the engine stops on its own (e.g. silence
+   *  timeout), never for a stop() the caller asked for - long-running
+   *  listeners use it to restart. */
+  start(onSegment: (seg: SttSegment) => void, onEnd?: () => void): Promise<void>;
   pushPcm(chunk: Uint8Array): void;
   stop(): Promise<void>;
 }

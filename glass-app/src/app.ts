@@ -14,6 +14,7 @@ import { transcribePcm } from './stt/openAiProxy';
 import { WebSpeechSttProvider } from './stt/webSpeech';
 import { speakText } from './tts/openAiProxy';
 import { canSpeakOnDevice, speakOnDevice } from './tts/webSpeech';
+import { parseVoiceCommand } from './voice/commands';
 
 const NOTIFICATION_MS = 4_000;
 const TIMER_REFRESH_MS = 30_000;
@@ -55,6 +56,15 @@ export class GlanceApp {
   private webStt: WebSpeechSttProvider | undefined;
   private sttSegments: string[] = [];
   private dictationEngine: 'device' | 'proxy' = 'proxy';
+  // Hands-free mode: one continuous recognition stream parses commands
+  // ("open board", "next patient", "take a note", …) until told to stop.
+  private voiceControl = false;
+  private voiceCmd: WebSpeechSttProvider | undefined;
+  private voiceNoteActive = false;
+  private voiceNoteKind: 'note' | 'decision' = 'note';
+  private voiceRestartCount = 0;
+  private voiceStartedAt = 0;
+  private ttsSpeaking = false;
 
   constructor(
     private bridge: GlassBridge,
@@ -157,6 +167,7 @@ export class GlanceApp {
         case 'Back to patient': this.patientCard.resetDetail(); this.showCard(1); break;
         case 'Forward details': this.patientCard.nextDetail(1); this.showCard(1); break;
         case 'Notes': this.showCard(2); break;
+        case 'Voice control': void this.toggleVoiceControl(); break;
       }
       return;
     }
@@ -192,7 +203,175 @@ export class GlanceApp {
     this.firstRender = false;
   }
 
+  // ── Hands-free voice control ────────────────────────────────────────────
+
+  private async toggleVoiceControl(): Promise<void> {
+    if (this.voiceControl) {
+      await this.disableVoiceControl('Voice control off');
+      return;
+    }
+    if (this.listening) await this.finishDictation(); // one stream at a time
+    if (!await this.startVoiceCmdProvider()) {
+      this.flashFooter('Voice control unavailable here');
+      return;
+    }
+    this.voiceControl = true;
+    this.menuCard.voiceControlOn = true;
+    this.voiceRestartCount = 0;
+    this.flashFooter('Voice on - try "open board", "take a note"');
+    void this.render();
+  }
+
+  private async disableVoiceControl(message?: string): Promise<void> {
+    this.voiceControl = false;
+    this.voiceNoteActive = false;
+    this.menuCard.voiceControlOn = false;
+    const provider = this.voiceCmd;
+    this.voiceCmd = undefined;
+    await provider?.stop();
+    if (message) this.flashFooter(message);
+    void this.render();
+  }
+
+  private async startVoiceCmdProvider(): Promise<boolean> {
+    const provider = new WebSpeechSttProvider();
+    try {
+      await provider.start(
+        (seg) => { if (seg.isFinal && this.voiceCmd === provider) this.handleVoiceSegment(seg.text); },
+        () => {
+          // Spontaneous engine end (silence timeout on most phones) - restart
+          // so "always listening" holds, unless the engine is flapping.
+          if (this.voiceCmd !== provider || !this.voiceControl) return;
+          this.voiceCmd = undefined;
+          this.restartVoiceControl();
+        },
+      );
+    } catch (error) {
+      console.warn('[voice] recognition unavailable', error);
+      return false;
+    }
+    this.voiceStartedAt = Date.now();
+    this.voiceCmd = provider;
+    return true;
+  }
+
+  private restartVoiceControl(): void {
+    if (this.ttsSpeaking) return; // speakNote() resumes us after readback ends
+    if (Date.now() - this.voiceStartedAt < 1_000) {
+      this.voiceRestartCount += 1;
+      if (this.voiceRestartCount >= 3) {
+        void this.disableVoiceControl('Voice control gave up (mic?)');
+        return;
+      }
+    } else {
+      this.voiceRestartCount = 0;
+    }
+    setTimeout(() => {
+      if (!this.voiceControl || this.voiceCmd) return;
+      void this.startVoiceCmdProvider().then((ok) => {
+        if (!ok) void this.disableVoiceControl('Voice control lost');
+      });
+    }, 250);
+  }
+
+  private handleVoiceSegment(transcript: string): void {
+    if (this.voiceNoteActive) {
+      if (parseVoiceCommand(transcript).kind === 'stop') {
+        void this.finishVoiceNote();
+        return;
+      }
+      this.sttSegments.push(transcript.trim());
+      this.notesCard.setDraft(this.sttSegments.join(' '));
+      void this.render();
+      return;
+    }
+    const cmd = parseVoiceCommand(transcript);
+    switch (cmd.kind) {
+      case 'open':
+        if (cmd.target === 'board') this.showCard(GlanceApp.BOARD_INDEX);
+        else if (cmd.target === 'patients') this.showCard(0);
+        else if (cmd.target === 'patient') { this.patientCard.resetDetail(); this.showCard(1); }
+        else this.showCard(2);
+        break;
+      case 'nav': this.voiceNav(cmd.delta); break;
+      case 'startNote': this.beginVoiceNote('note'); break;
+      case 'note': this.saveSpokenNote(cmd.text, 'note'); break;
+      case 'decision': this.saveSpokenNote(cmd.text, 'decision'); break;
+      case 'readNotes': void this.readNotesBack(); break;
+      case 'stop': void this.disableVoiceControl('Voice control off'); break;
+      default: break; // ambient meeting talk - never react to unknowns
+    }
+  }
+
+  /** "next/previous patient" - same room-wide effect as the dashboard's own
+   *  voice commands: local switch plus the server-authoritative broadcast. */
+  private voiceNav(delta: 1 | -1): void {
+    const board = this.store.board;
+    if (!board?.cases.length) return;
+    const current = Math.max(0, board.cases.findIndex((c) => c.caseId === board.activeCaseId));
+    const next = board.cases[(current + delta + board.cases.length) % board.cases.length];
+    if (!next) return;
+    this.lastActiveCaseId = next.caseId; // own action - no "board moved" cue
+    this.store.selectActiveCase(next.caseId);
+    void this.sync.sendCommand?.('selectPatient', { patientId: next.caseId });
+    this.patientCard.resetDetail();
+    this.showCard(1);
+  }
+
+  private beginVoiceNote(kind: 'note' | 'decision'): void {
+    this.voiceNoteActive = true;
+    this.voiceNoteKind = kind;
+    this.sttSegments = [];
+    this.notesCard.setDraft('');
+    this.showCard(2);
+    this.flashFooter('Dictating. Say "stop" to save.');
+  }
+
+  private async finishVoiceNote(): Promise<void> {
+    this.voiceNoteActive = false;
+    const text = this.sttSegments.join(' ').trim();
+    this.sttSegments = [];
+    this.notesCard.setDraft('');
+    if (!text) {
+      this.flashFooter('Nothing heard');
+      void this.render();
+      return;
+    }
+    this.saveSpokenNote(text, this.voiceNoteKind);
+  }
+
+  /** Decisions are notes with weight: marked, case-tagged, read back for
+   *  confirmation. Local-only until vr-mtb-web grows a write API for them. */
+  private saveSpokenNote(text: string, kind: 'note' | 'decision'): void {
+    const caseId = this.store.board?.activeCaseId;
+    const stored = kind === 'decision'
+      ? `★ Decision${caseId ? ` [${caseId}]` : ''}: ${text}`
+      : text;
+    this.notesCard.add(stored);
+    this.flashFooter(kind === 'decision' ? 'Decision recorded' : 'Note saved');
+    void this.render();
+    if (this.ttsEnabled) void this.speakNote(stored);
+  }
+
+  private async readNotesBack(): Promise<void> {
+    const notes = this.notesCard.recent(3);
+    if (!notes.length) {
+      this.flashFooter('No notes yet');
+      return;
+    }
+    this.showCard(2);
+    await this.speakNote(notes.join('. Next note: '));
+  }
+
+  // ── Tap-driven dictation ────────────────────────────────────────────────
+
   private async toggleVoice(): Promise<void> {
+    if (this.voiceControl) {
+      // One shared recognition stream - a tap starts/saves a spoken note in it.
+      if (this.voiceNoteActive) await this.finishVoiceNote();
+      else this.beginVoiceNote('note');
+      return;
+    }
     if (this.listening) {
       await this.finishDictation();
       return;
@@ -260,10 +439,7 @@ export class GlanceApp {
         void this.render();
         return;
       }
-      this.notesCard.add(text);
-      this.flashFooter('Note saved');
-      void this.render();
-      if (this.ttsEnabled) void this.speakNote(text);
+      this.saveSpokenNote(text, 'note');
       return;
     }
     await this.bridge.setMic(false, 'glasses');
@@ -276,11 +452,8 @@ export class GlanceApp {
     void this.render();
     try {
       const text = await transcribePcm(this.transcribeUrl, pcm);
-      this.notesCard.add(text);
       this.notesCard.setDraft('');
-      this.flashFooter('Note saved');
-      void this.render();
-      if (this.ttsEnabled) void this.speakNote(text);
+      this.saveSpokenNote(text, 'note');
     } catch (error) {
       this.notesCard.setDraft('');
       const message = error instanceof Error ? error.message : 'Transcription failed';
@@ -292,25 +465,50 @@ export class GlanceApp {
 
   /** Read the saved note back through the phone speaker (the G2 itself is silent). */
   private async speakNote(text: string): Promise<void> {
-    if (!this.ttsForcedProxy && canSpeakOnDevice()) {
-      try {
-        await speakOnDevice(text);
-        return;
-      } catch (error) {
-        console.warn('[tts] on-device readback failed, trying proxy', error);
-      }
+    // Feedback guard: while the phone talks, our own recognition stream would
+    // transcribe the readback. Pause it and resume once the speech ends.
+    const resumeVoice = this.voiceControl && this.voiceCmd !== undefined;
+    if (resumeVoice) {
+      this.ttsSpeaking = true;
+      const provider = this.voiceCmd;
+      this.voiceCmd = undefined;
+      await provider?.stop();
     }
     try {
-      await speakText(this.ttsUrl, text);
-    } catch (error) {
-      console.warn('[tts] readback failed', error);
-      this.flashFooter('Readback unavailable');
+      if (!this.ttsForcedProxy && canSpeakOnDevice()) {
+        try {
+          await speakOnDevice(text);
+          return;
+        } catch (error) {
+          console.warn('[tts] on-device readback failed, trying proxy', error);
+        }
+      }
+      try {
+        await speakText(this.ttsUrl, text);
+      } catch (error) {
+        console.warn('[tts] readback failed', error);
+        this.flashFooter('Readback unavailable');
+      }
+    } finally {
+      if (resumeVoice) {
+        this.ttsSpeaking = false;
+        if (this.voiceControl && !this.voiceCmd) {
+          void this.startVoiceCmdProvider().then((ok) => {
+            if (!ok) void this.disableVoiceControl('Voice control lost');
+          });
+        }
+      }
     }
   }
 
   private async stopVoice(): Promise<void> {
     this.listening = false;
     this.dictating = false;
+    this.voiceControl = false;
+    this.voiceNoteActive = false;
+    this.menuCard.voiceControlOn = false;
+    await this.voiceCmd?.stop();
+    this.voiceCmd = undefined;
     await this.webStt?.stop();
     this.webStt = undefined;
     this.sttSegments = [];
