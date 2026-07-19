@@ -11,7 +11,9 @@ import { routeInput } from './input/router';
 import { watchWearState } from './privacy/wearGuard';
 import type { BoardStore, BoardSync } from './sync/boardSync';
 import { transcribePcm } from './stt/openAiProxy';
+import { WebSpeechSttProvider } from './stt/webSpeech';
 import { speakText } from './tts/openAiProxy';
+import { canSpeakOnDevice, speakOnDevice } from './tts/webSpeech';
 
 const NOTIFICATION_MS = 4_000;
 const TIMER_REFRESH_MS = 30_000;
@@ -45,6 +47,14 @@ export class GlanceApp {
     ?? this.transcribeUrl.replace('/api/transcribe', '/api/tts');
   // Readback plays on the PHONE (the G2 has no speaker); ?tts=0 keeps it silent.
   private ttsEnabled = new URLSearchParams(location.search).get('tts') !== '0';
+  // Standalone by default: dictation and readback use the phone's own speech
+  // engines (no PC, no key). ?stt=proxy / ?tts=proxy force the OpenAI proxy
+  // path instead — better accuracy, but needs the transcription server.
+  private sttForcedProxy = new URLSearchParams(location.search).get('stt') === 'proxy';
+  private ttsForcedProxy = new URLSearchParams(location.search).get('tts') === 'proxy';
+  private webStt: WebSpeechSttProvider | undefined;
+  private sttSegments: string[] = [];
+  private dictationEngine: 'device' | 'proxy' = 'proxy';
 
   constructor(
     private bridge: GlassBridge,
@@ -170,12 +180,14 @@ export class GlanceApp {
       await this.finishDictation();
       return;
     }
+    if (!this.sttForcedProxy && await this.startDeviceDictation()) return;
     // The page is created before a touch can call this, as required by the SDK.
     if (!await this.bridge.setMic(true, 'glasses')) {
       this.flashFooter('Mic blocked: grant G2 mic permission');
       return;
     }
     try {
+      this.dictationEngine = 'proxy';
       this.listening = true;
       this.dictating = true;
       this.audioChunks = [];
@@ -189,9 +201,54 @@ export class GlanceApp {
     }
   }
 
+  /** Standalone dictation on the phone's speech engine. False = engine missing,
+   *  so the caller falls back to the glasses-mic -> proxy recording path. */
+  private async startDeviceDictation(): Promise<boolean> {
+    const provider = new WebSpeechSttProvider();
+    this.sttSegments = [];
+    try {
+      await provider.start((seg) => {
+        // Keep collecting through stop()'s grace period (trailing finals),
+        // but ignore events from a provider that was already replaced.
+        if (!seg.isFinal || this.webStt !== provider) return;
+        this.sttSegments.push(seg.text);
+        this.notesCard.setDraft(this.sttSegments.join(' '));
+        void this.render();
+      });
+    } catch (error) {
+      console.warn('[dictation] web speech unavailable, falling back to proxy', error);
+      return false;
+    }
+    this.webStt = provider;
+    this.dictationEngine = 'device';
+    this.listening = true;
+    this.dictating = true;
+    this.notesCard.setDraft('');
+    this.showCard(2);
+    this.flashFooter('Listening (on-device). Tap again to save.');
+    return true;
+  }
+
   private async finishDictation(): Promise<void> {
     this.listening = false;
     this.dictating = false;
+    if (this.dictationEngine === 'device') {
+      await this.webStt?.stop(); // waits for the engine's trailing final result
+      this.webStt = undefined;
+      const text = this.sttSegments.join(' ').trim();
+      this.sttSegments = [];
+      this.notesCard.setDraft('');
+      if (!text) {
+        this.flashFooter('No speech recognized');
+        void this.render();
+        return;
+      }
+      this.notesCard.add(text);
+      this.flashFooter('Note saved');
+      void this.render();
+      if (this.ttsEnabled) void this.speakNote(text);
+      return;
+    }
     await this.bridge.setMic(false, 'glasses');
     const pcm = this.joinAudio();
     if (!pcm.length) {
@@ -218,6 +275,14 @@ export class GlanceApp {
 
   /** Read the saved note back through the phone speaker (the G2 itself is silent). */
   private async speakNote(text: string): Promise<void> {
+    if (!this.ttsForcedProxy && canSpeakOnDevice()) {
+      try {
+        await speakOnDevice(text);
+        return;
+      } catch (error) {
+        console.warn('[tts] on-device readback failed, trying proxy', error);
+      }
+    }
     try {
       await speakText(this.ttsUrl, text);
     } catch (error) {
@@ -229,6 +294,9 @@ export class GlanceApp {
   private async stopVoice(): Promise<void> {
     this.listening = false;
     this.dictating = false;
+    await this.webStt?.stop();
+    this.webStt = undefined;
+    this.sttSegments = [];
     await this.bridge.setMic(false, 'glasses');
   }
 

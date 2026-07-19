@@ -81,9 +81,11 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 | `?mirror=1` | Render to the glasses **and** the phone screen at once — see "Recording a demo" |
 | `?step=<seconds>` | Auto-advance the mock board's active case every N seconds (off by default — the board stays still until you navigate it) |
 | `?privacy=1` | Enable wear-state PHI blanking (off by default during dev/demo — see COMPLIANCE.md) |
-| `?transcribe_url=<url>` | Point dictation at a transcription server other than the default `http://192.168.178.65:8788/api/transcribe` |
+| `?stt=proxy` | Force dictation through the local OpenAI proxy (glasses mic → PC server). Default is the phone's own speech engine — no PC, no key |
+| `?transcribe_url=<url>` | Point proxy dictation at a server other than the default `http://192.168.178.65:8788/api/transcribe` |
 | `?tts=0` | Disable the spoken note readback (on by default; plays on the **phone** — the G2 has no speaker) |
-| `?tts_url=<url>` | Point readback at a TTS endpoint other than `<transcribe server>/api/tts` |
+| `?tts=proxy` | Force readback through the proxy's OpenAI TTS instead of the phone's built-in speech synthesis |
+| `?tts_url=<url>` | Point proxy readback at a TTS endpoint other than `<transcribe server>/api/tts` |
 | `?sync=livekit&token_url=…&room=…&identity=…` | Use the real LiveKit board instead of mock data |
 
 ## Installing on the glasses (QR sideload)
@@ -119,9 +121,9 @@ just a file.
 
 Note: a packaged install launches with no URL query params, so it always runs
 on the static mock board (see below) rather than live LiveKit sync. Dictation
-still works from a packaged install — it only needs the `network` permission
-(already declared in `app.json`) to reach the transcription server, not the
-`?sync=livekit` param.
+and readback still work from a packaged install — by default they run on the
+phone's own speech engines, so no PC, no API key, and no server are needed at
+all (see "Voice notes" below).
 
 The app ships with **static demo data** (three invented breast-cancer cases in
 `src/sync/mockSync.ts`) and needs no backend for navigation: ideal for screen
@@ -131,22 +133,34 @@ App.
 
 ## Voice notes (dictation)
 
-Tap once on the Patient card to start recording (glasses mic), tap again to
-stop — the recording is sent to a small **private, local transcription
-server** (`glass-app/tools/transcription-server.mjs`), which forwards it to
-OpenAI's transcription API and returns the text, saved to the Notes card. The
-proxy exists so the glasses' JS bundle never touches the API key directly —
-the key stays server-side, on your PC only.
+Tap once on the Patient card to start dictating, tap again to save the note.
+Two engines, chosen automatically:
 
-After the note is saved, the same server's `/api/tts` endpoint (OpenAI
-`gpt-4o-mini-tts`, same key) reads it back aloud — **through the phone
-speaker**, since the G2 has no speaker of its own. Readback is on by default;
+- **On-device (default, standalone):** the phone's own Web Speech engine
+  transcribes as you talk — recognized phrases appear live in the Notes
+  draft. **No PC, no API key, no server of ours.** This is what a packaged
+  `.ehpk` install uses in the field. (Heads-up: the phone OS's speech
+  engine may itself call its vendor's speech service — see COMPLIANCE.md §3
+  before real patient audio.) If the Even App's WebView doesn't expose
+  speech recognition, the app falls back to the proxy path automatically.
+- **OpenAI proxy (`?stt=proxy`, higher accuracy):** the glasses-mic
+  recording is sent to a small **private, local transcription server**
+  (`glass-app/tools/transcription-server.mjs`), which forwards it to
+  OpenAI's `gpt-4o-transcribe` and returns the text. The proxy exists so
+  the glasses' JS bundle never touches the API key directly — the key
+  stays server-side, on your PC only.
+
+After the note is saved it is read back aloud — **through the phone
+speaker**, since the G2 has no speaker of its own. Readback also runs
+on-device by default (the phone's built-in speech synthesis, zero network);
+`?tts=proxy` forces the server's `/api/tts` endpoint (OpenAI
+`gpt-4o-mini-tts`, same key) for nicer voices. Readback is on by default;
 add `?tts=0` to keep the phone silent (e.g. in an actual meeting room), and
 mind that spoken readback of patient notes is audible to everyone nearby —
 see COMPLIANCE.md before using it around real patient data.
 
-**Start it** (needs an OpenAI API key — see "Do I need a ChatGPT/OpenAI API
-key?" below):
+**Start the proxy server** (only needed for `?stt=proxy` / `?tts=proxy`;
+needs an OpenAI API key — see "Do I need a ChatGPT/OpenAI API key?" below):
 
 ```
 cd glass-app
@@ -171,11 +185,13 @@ can't connect — never a crash.
 
 ### Do I need a ChatGPT/OpenAI API key?
 
-Yes, for this specific implementation — the transcription server calls
-OpenAI's `gpt-4o-transcribe` model (and `gpt-4o-mini-tts` for the spoken
-readback), which needs an `OPENAI_API_KEY` from
-[platform.openai.com](https://platform.openai.com/). One key covers both.
-That key is **never** part of the glasses bundle; it lives only in the
+**Not anymore for the default setup** — on-device dictation and readback use
+the phone's built-in speech engines, no key and no server. You only need a
+key for the higher-accuracy proxy path (`?stt=proxy` / `?tts=proxy`): the
+transcription server calls OpenAI's `gpt-4o-transcribe` model (and
+`gpt-4o-mini-tts` for the spoken readback), which needs an `OPENAI_API_KEY`
+from [platform.openai.com](https://platform.openai.com/). One key covers
+both. That key is **never** part of the glasses bundle; it lives only in the
 transcription server's process environment on your PC (see above). This is a demo-stage choice for
 speed — COMPLIANCE.md's original recommendation for real patient audio was a
 self-hosted model (no cloud vendor, no per-key cost); revisit that decision
@@ -204,6 +220,7 @@ through the lens), so three options, best first:
 - [x] Manual patient control: browse-then-commit selection, independent of any auto-advancing timer
 - [x] Voice dictation: mic capture → private local transcription proxy → OpenAI → note, verified end to end
 - [x] Spoken note readback (TTS): saved note → same proxy `/api/tts` → OpenAI `gpt-4o-mini-tts` → phone speaker (`?tts=0` disables; not yet hand-tested on device)
+- [x] Standalone mode: on-device dictation + readback via the phone's Web Speech engines is now the **default** — a packaged install needs no PC, key, or backend (`?stt=proxy`/`?tts=proxy` re-enable the OpenAI path; not yet hand-tested on device)
 - [x] On-device validation with a physical G2 (found and fixed the real root cause of unresponsive touch input — see ARCHITECTURE.md §5)
 - [x] `.ehpk` packaging for teammate distribution (`npm run pack`, Even Hub portal import)
 - [x] LiveKit sync client speaking vr-mtb-web's **real** backend protocol

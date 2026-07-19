@@ -13,6 +13,7 @@ interface Recognition {
   stop(): void;
   onresult: ((event: RecognitionEvent) => void) | null;
   onerror: ((event: RecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
 }
 type RecognitionConstructor = new () => Recognition;
 
@@ -47,7 +48,15 @@ export class WebSpeechSttProvider implements SttProvider {
   pushPcm(): void { /* A future PCM provider can consume G2 audio here. */ }
 
   async stop(): Promise<void> {
-    this.recognition?.stop();
+    const recognition = this.recognition;
     this.recognition = undefined;
+    if (!recognition) return;
+    // The engine can flush one last final result between stop() and onend,
+    // so wait (bounded) before the caller reads the collected segments.
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 1_500);
+      recognition.onend = () => { clearTimeout(timer); resolve(); };
+      recognition.stop();
+    });
   }
 }
