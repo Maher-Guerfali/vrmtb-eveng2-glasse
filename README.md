@@ -70,10 +70,29 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
    [CLI docs](https://hub.evenrealities.com/docs/reference/cli)) or any QR
    generator; the QR simply contains the URL.
 4. **Sideload:** Even App → *Developer Center* → built-in scanner → scan.
-   The plugin syncs to the G2 and appears in the glasses menu.
-5. For a shareable build instead of a live dev server: `npm run build`, then
-   upload the bundle as a private build on the
-   [dev portal](https://hub.evenrealities.com/) ([quickstart](https://hub.evenrealities.com/docs/get-started/quickstart/index)).
+   The plugin syncs to the G2 and appears in the glasses menu, with hot reload
+   on every save — this is the fast loop for iterating on the app yourself.
+
+### Installing on the glasses (import package — for sharing with teammates)
+
+QR sideload needs *your* PC running and reachable on the *same Wi-Fi* as the
+phone — fine for you, awkward for handing the app to a colleague. For that,
+build a standalone `.ehpk` package instead: no dev server, no shared network,
+just a file.
+
+1. `cd glass-app && npm run pack` — builds and produces `vrmtb-glance.ehpk`
+   (uses [`@evenrealities/evenhub-cli`](https://www.npmjs.com/package/@evenrealities/evenhub-cli)
+   `pack`, reading `app.json` — see [CLI docs](https://hub.evenrealities.com/docs/reference/cli)).
+2. On [hub.evenrealities.com](https://hub.evenrealities.com/), open **Import
+   package** and upload `vrmtb-glance.ehpk`.
+3. Your teammate's Even App installs it from their account like any other
+   Even Hub app — no QR, no shared Wi-Fi needed afterward.
+
+Note: a packaged install launches with no URL query params, so it always runs
+in **mock-data mode** (see below) — exactly what you want for a demo/recording
+to send around. `app.json` currently declares zero permissions (no network) to
+match that; add the `network` permission there once `?sync=livekit` mode is
+promoted out of dev-only use (see ARCHITECTURE.md §3).
 
 The app ships with **static demo data** (three invented breast-cancer cases in
 `src/sync/mockSync.ts`) and needs no backend: ideal for screen recordings.
