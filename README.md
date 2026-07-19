@@ -64,6 +64,20 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
   anywhere returns to the menu.
 - **Voice notes**: from the Patient card, tap once to start recording (glasses
   mic), tap again to stop and transcribe — see "Voice notes" below.
+- **Voice control (hands-free)**: toggle from the Menu card. One continuous
+  on-device listener parses commands — *"open board"*, *"open patient list"*,
+  *"open patient"*, *"open notes"*, *"next patient"* / *"previous patient"*
+  (broadcast room-wide exactly like the dashboard's own voice commands),
+  *"take a note"* (then dictate; *"stop"* saves), *"note 〈text〉"*,
+  *"decision 〈text〉"* (saved as a starred, case-tagged note),
+  *"read notes"* (spoken back via the phone), and *"stop"* to end the mode.
+  Unknown speech is deliberately ignored — ambient meeting talk must never
+  trigger anything. If the phone's engine dies (silence timeout), listening
+  restarts itself; readback pauses listening so the mic never hears its own
+  TTS.
+- **Live board awareness**: when someone else moves the board to another
+  case, the footer flashes the new case label; the Board card's status row
+  carries a per-case elapsed clock (resets only on a real case switch).
 - **Live sync**: `src/sync/liveKitSync.ts` talks to the **real** vr-mtb-web
   backend directly — `POST /api/rooms/join`, `GET /api/session`, and the same
   LiveKit `activePatient`/`command` data-channel topics the dashboard's own
@@ -221,11 +235,13 @@ through the lens), so three options, best first:
 - [x] Voice dictation: mic capture → private local transcription proxy → OpenAI → note, verified end to end
 - [x] Spoken note readback (TTS): saved note → same proxy `/api/tts` → OpenAI `gpt-4o-mini-tts` → phone speaker (`?tts=0` disables; not yet hand-tested on device)
 - [x] Standalone mode: on-device dictation + readback via the phone's Web Speech engines is now the **default** — a packaged install needs no PC, key, or backend (`?stt=proxy`/`?tts=proxy` re-enable the OpenAI path; not yet hand-tested on device)
+- [x] Hands-free voice commands wired in (Menu → Voice control): navigation, next/previous patient with room-wide broadcast, spoken notes, decisions, note readback — verified headless against the mock bridge; not yet hand-tested on device
+- [x] Board awareness: footer cue when another client switches the active case + per-case elapsed clock on the Board card
+- [ ] Broadcast dictated notes/decisions to the dashboard — needs a notes write API (or command vocabulary entry) in vr-mtb-web first; decisions are stored locally as starred case-tagged notes until then
 - [x] On-device validation with a physical G2 (found and fixed the real root cause of unresponsive touch input — see ARCHITECTURE.md §5)
 - [x] `.ehpk` packaging for teammate distribution (`npm run pack`, Even Hub portal import)
 - [x] LiveKit sync client speaking vr-mtb-web's **real** backend protocol
       directly (verified against its actual source — no dashboard changes
       needed; two-way, not just a mirror — see ARCHITECTURE.md §2-3)
 - [ ] Hand-tested against a running vr-mtb-web backend + LiveKit server (built and reviewed against source, not yet run live)
-- [ ] STT provider decision for real patient audio (currently OpenAI cloud for demo speed; self-hosted recommended before real use — see COMPLIANCE.md §3)
-- [ ] Hands-free voice commands (scaffolded in `src/stt/webSpeech.ts` / `src/voice/commands.ts`, not yet wired in)
+- [ ] STT provider decision for real patient audio (phone Web Speech / OpenAI cloud both involve vendor services; self-hosted recommended before real use — see COMPLIANCE.md §3)
