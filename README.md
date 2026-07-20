@@ -36,6 +36,7 @@ backend.
 | [docs/G2-PLATFORM-NOTES.md](docs/G2-PLATFORM-NOTES.md) | Verified hardware + Even Hub SDK facts (API surface of `@evenrealities/even_hub_sdk` 0.0.12) |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | GDPR / MDR posture for patient data on a wearable HUD |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases P0–P3 with acceptance criteria |
+| [docs/presentation/](docs/presentation/vrmtb-glance-deck.html) | Point-by-point slide deck: problem, device, every shipped feature with real screenshots, architecture, compliance, roadmap |
 
 ## App scaffold (`glass-app/`)
 
