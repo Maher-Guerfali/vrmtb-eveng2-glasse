@@ -8,7 +8,7 @@
 
 import { ConnectionState, Room, RoomEvent } from 'livekit-client';
 
-import type { BoardStore, BoardSync } from './boardSync';
+import type { BoardStore, BoardSync, TalkStatus } from './boardSync';
 import type { HudBoardState, HudPatientSummary } from './protocol';
 
 export interface LiveKitSyncConfig {
@@ -85,6 +85,7 @@ export class LiveKitSync implements BoardSync {
   private room?: Room;
   private decoder = new TextDecoder();
   private roomId = '';
+  private micPublished = false;
 
   constructor(private config: LiveKitSyncConfig) {
     this.label = `vr-mtb-web · ${config.roomCode}`;
@@ -179,8 +180,45 @@ export class LiveKitSync implements BoardSync {
     }).catch((e) => console.warn('[liveKitSync] active-patient broadcast failed', e));
   }
 
+  /**
+   * Publishes the WebView's own `getUserMedia` microphone into the room
+   * (livekit-client's standard path - the same API vr-mtb-web's own
+   * livekitChannel.ts uses for the dashboard). This is the PHONE's
+   * microphone, not the glasses' - the G2's mic only ever streams out
+   * through the SDK's separate custom PCM/`audioControl` channel (used for
+   * dictation elsewhere in this app), which is not a standard Web Audio
+   * device and so is not what WebRTC/getUserMedia captures from inside this
+   * WebView. Piping the glasses' own PCM into a published track instead
+   * would need a Web Audio bridge (AudioContext +
+   * MediaStreamAudioDestinationNode) - not implemented; flagged as a
+   * follow-up once phone-mic publish is verified working on a real device.
+   */
+  async setMicPublished(enabled: boolean): Promise<boolean> {
+    const room = this.room;
+    if (!room || room.state !== ConnectionState.Connected) return false;
+    try {
+      await room.localParticipant.setMicrophoneEnabled(enabled);
+      this.micPublished = enabled;
+      return true;
+    } catch (e) {
+      console.warn('[liveKitSync] mic publish failed', e);
+      this.micPublished = false;
+      return false;
+    }
+  }
+
+  getTalkStatus(): TalkStatus {
+    const room = this.room;
+    return {
+      connected: room?.state === ConnectionState.Connected,
+      micPublished: this.micPublished,
+      participantCount: room ? room.remoteParticipants.size + 1 : 0,
+    };
+  }
+
   async stop(): Promise<void> {
     if (this.room && this.room.state !== ConnectionState.Disconnected) await this.room.disconnect();
     this.room = undefined;
+    this.micPublished = false;
   }
 }

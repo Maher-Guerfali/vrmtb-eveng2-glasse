@@ -5,6 +5,7 @@ import { NotesCard } from './cards/notesCard';
 import { MenuCard } from './cards/menuCard';
 import { BoardCard } from './cards/boardCard';
 import { CaptionsCard } from './cards/captionsCard';
+import { TalkCard } from './cards/talkCard';
 import type { Card } from './cards/types';
 import { composePage } from './hud/composer';
 import { ID_FOOTER, NAME_FOOTER } from './hud/layout';
@@ -27,11 +28,13 @@ export class GlanceApp {
   private menuCard = new MenuCard();
   private boardCard = new BoardCard();
   private captionsCard = new CaptionsCard();
-  private cards: Card[] = [this.patientListCard, this.patientCard, this.notesCard, this.menuCard, this.boardCard, this.captionsCard];
+  private talkCard: TalkCard;
+  private cards: Card[];
   // The menu is the app's home screen; no patient opens until selected.
   private cardIndex = 3;
   private static readonly BOARD_INDEX = 4;
   private static readonly CAPTIONS_INDEX = 5;
+  private static readonly TALK_INDEX = 6;
 
   private firstRender = true;
   private foreground = true;
@@ -78,7 +81,13 @@ export class GlanceApp {
     private store: BoardStore,
     private sync: BoardSync,
     private privacyGuard = false,
-  ) {}
+  ) {
+    this.talkCard = new TalkCard(sync);
+    this.cards = [
+      this.patientListCard, this.patientCard, this.notesCard,
+      this.menuCard, this.boardCard, this.captionsCard, this.talkCard,
+    ];
+  }
 
   async start(): Promise<void> {
     this.disposers.push(
@@ -179,7 +188,12 @@ export class GlanceApp {
         case 'Notes': this.showCard(2); break;
         case 'Captions': this.showCard(GlanceApp.CAPTIONS_INDEX); break;
         case 'Voice control': void this.toggleVoiceControl(); break;
+        case 'Talk (LiveKit)': this.showCard(GlanceApp.TALK_INDEX); break;
       }
+      return;
+    }
+    if (this.cardIndex === GlanceApp.TALK_INDEX) {
+      void this.toggleTalk();
       return;
     }
     void this.toggleVoice();
@@ -214,6 +228,41 @@ export class GlanceApp {
     this.firstRender = false;
   }
 
+  // ── Live voice (LiveKit talk) ───────────────────────────────────────────
+
+  private async toggleTalk(): Promise<void> {
+    if (!this.sync.getTalkStatus || !this.sync.setMicPublished) {
+      this.flashFooter('Talk needs the real backend (?sync=livekit)');
+      return;
+    }
+    if (this.sync.getTalkStatus().micPublished) {
+      await this.sync.setMicPublished(false);
+      this.menuCard.talkOn = false;
+      this.flashFooter('Mic off');
+      void this.render();
+      return;
+    }
+    // Talk (WebRTC mic publish) and dictation/voice-control (Web Speech,
+    // which also opens the phone's mic) both want the same hardware - only
+    // one stream at a time, same rule already applied between dictation and
+    // hands-free control below.
+    if (this.listening) await this.finishDictation();
+    if (this.voiceControl) await this.disableVoiceControl();
+    const ok = await this.sync.setMicPublished(true);
+    this.menuCard.talkOn = ok;
+    this.flashFooter(ok ? '🎙 Live — the room hears you' : 'Mic permission denied');
+    void this.render();
+  }
+
+  /** Reverse guard: dictation/voice-control starting up drops a live Talk
+   *  publish first, for the same one-stream-at-a-time reason. */
+  private async dropTalkForMic(): Promise<void> {
+    if (this.sync.getTalkStatus?.().micPublished) {
+      await this.sync.setMicPublished?.(false);
+      this.menuCard.talkOn = false;
+    }
+  }
+
   // ── Hands-free voice control ────────────────────────────────────────────
 
   private async toggleVoiceControl(): Promise<void> {
@@ -222,6 +271,7 @@ export class GlanceApp {
       return;
     }
     if (this.listening) await this.finishDictation(); // one stream at a time
+    await this.dropTalkForMic();
     if (!await this.startVoiceCmdProvider()) {
       this.flashFooter('Voice control unavailable here');
       return;
@@ -393,7 +443,12 @@ export class GlanceApp {
       await this.finishDictation();
       return;
     }
-    if (!this.sttForcedProxy && await this.startDeviceDictation()) return;
+    // Only the device (Web Speech) path shares the phone mic with Talk - the
+    // proxy path below streams the glasses' own separate PCM channel instead.
+    if (!this.sttForcedProxy) {
+      await this.dropTalkForMic();
+      if (await this.startDeviceDictation()) return;
+    }
     // The page is created before a touch can call this, as required by the SDK.
     if (!await this.bridge.setMic(true, 'glasses')) {
       this.flashFooter('Mic blocked: grant G2 mic permission');
@@ -530,6 +585,7 @@ export class GlanceApp {
     await this.webStt?.stop();
     this.webStt = undefined;
     this.sttSegments = [];
+    await this.dropTalkForMic();
     await this.bridge.setMic(false, 'glasses');
   }
 

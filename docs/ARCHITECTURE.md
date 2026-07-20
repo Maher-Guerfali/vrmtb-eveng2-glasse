@@ -115,32 +115,54 @@ src/
                         and flags one container to capture touch input (§5)
   cards/
     types.ts            Card interface: id, render() → CardContent
-    menuCard.ts          home screen: Board / Patient list / Back to patient / Forward details / Notes
-    boardCard.ts         read-only meeting overview: agenda, presenter, elapsed, recording status
+    menuCard.ts          home screen: Board / Patient list / Back to patient / Forward details /
+                          Notes / Captions / Voice control / Talk (LiveKit) - the last two show
+                          a live (on)/(off)/(live) suffix reflecting app.ts's actual state
+    boardCard.ts         read-only meeting overview: agenda, presenter, elapsed + per-case clock,
+                          recording status
     patientListCard.ts   browse-then-commit patient picker: swipe moves a local cursor only,
                           tap commits the selection — browsing never changes what is "active"
     patientCard.ts       pseudonymized patient snapshot (2 pages: summary, history+board question)
-    notesCard.ts         session voice notes (dictation results); never persisted on-device
+    notesCard.ts         session voice notes (dictation + hands-free "note"/"decision" results);
+                          never persisted on-device
+    captionsCard.ts      rolling word-wrapped transcript of everything the voice-control stream
+                          hears; session-only, cleared with notes on exit
+    talkCard.ts           status-only view of live LiveKit voice (see §7) - app.ts owns the
+                          actual publish/mute call since it must coordinate with dictation and
+                          voice-control mic ownership, which span more than one card
   input/
     router.ts           touchpad/ring events → app-level tap/swipe/doubleTap/foreground/exit
   sync/
-    protocol.ts         vrmtb.hud envelope + payload types (shared with dashboard)
-    boardSync.ts        BoardSync interface + BoardStore (current state + listeners)
+    protocol.ts         HudBoardState/HudPatientSummary/HudNotification types - populated by
+                         either MockSync's scripted demo or LiveKitSync against the real backend
+    boardSync.ts        BoardSync interface (+ TalkStatus type) and BoardStore (current state +
+                         listeners); setBoard/setPatient/notify/selectActiveCase are direct calls,
+                         not a parsed wire envelope - there's nothing generic to decode
     mockSync.ts         static-by-default fake tumor board (?step=N to auto-advance)
-    liveKitSync.ts      real client: token fetch → room join → vrmtb.hud + vrmtb.annotation
+    liveKitSync.ts       real client: vr-mtb-web's actual REST + LiveKit protocol (§2-3), plus
+                          live mic publish/status for the Talk card (§7)
   stt/
-    provider.ts          streaming SttProvider interface (future live captions, unused today)
-    webSpeech.ts          browser Web Speech implementation of SttProvider (scaffolded, not wired)
-    openAiProxy.ts       transcribePcm(): posts a finished recording's PCM to the local
-                          transcription server, used by the actual dictation flow in app.ts
+    provider.ts          streaming SttProvider interface (segment-by-segment; both dictation
+                          engines and hands-free voice control implement it)
+    webSpeech.ts          Web Speech (SpeechRecognition) implementation - the on-device, standalone,
+                          default engine for both dictation and hands-free voice control
+    openAiProxy.ts       transcribePcm(): posts a finished glasses-mic PCM recording to the local
+                          transcription server's /api/transcribe - the higher-accuracy fallback
+                          path (?stt=proxy), used when the WebView lacks SpeechRecognition
+  tts/
+    webSpeech.ts          on-device readback via the phone's speechSynthesis - default engine
+    openAiProxy.ts       speakText(): posts to the local server's /api/tts (OpenAI
+                          gpt-4o-mini-tts) - the higher-quality fallback path (?tts=proxy)
   voice/
-    commands.ts          parses spoken phrases into app commands (scaffolded for hands-free
-                          control, not wired into app.ts yet — see ROADMAP P3)
+    commands.ts          parses spoken phrases (English + German) into app commands - wired into
+                          app.ts's hands-free "Voice control" mode; unit-tested (commands.test.ts)
   privacy/
-    wearGuard.ts         blanks patient card when isWearing=false / glasses in case (opt-in,
-                          see §7 below — off by default during dev/demo, ?privacy=1 to enable)
+    wearGuard.ts         blanks patient card AND kills any active voice-control listening when
+                          isWearing=false / glasses in case (opt-in, see §8 below - off by default
+                          during dev/demo, ?privacy=1 to enable)
 tools/
-  transcription-server.mjs        private LAN proxy: PCM → WAV → OpenAI transcription → JSON.
+  transcription-server.mjs        private LAN proxy: /api/transcribe (PCM → WAV → OpenAI
+                                   transcription) and /api/tts (text → OpenAI TTS → audio).
                                    Keeps OPENAI_API_KEY server-side, off the glasses bundle.
   start-transcription-server.ps1  interactive launcher: prompts for the key with hidden input
                                    (SecureString), never writes it to disk. See README "Voice notes".
@@ -189,44 +211,102 @@ send it with `eventType` **undefined** on a `textEvent`/`sysEvent` carrying no
 type at all — `evenBridge.ts` treats a source-bearing event with no type as an
 implicit tap rather than dropping it.
 
-## 6. Voice notes (implemented) and live captions (future)
+## 6. Speech: dictation, hands-free control, captions, and readback (all implemented)
 
-**What's built:** push-to-talk dictation, not streaming captions. Tap on the
-Patient card calls `bridge.setMic(true, 'glasses')`; while listening,
-`onAudioPcm` chunks accumulate in `GlanceApp`. A second tap stops the mic,
-joins the chunks, and calls `transcribePcm()` (`stt/openAiProxy.ts`), which
-POSTs the raw PCM to a **private local server** (`tools/transcription-server.mjs`,
-port 8788 on the dev PC's LAN IP). That server wraps the PCM as a WAV file and
-calls OpenAI's `gpt-4o-transcribe`, returning `{ text }`. The result lands on
-the Notes card and nowhere else — no persistence (see COMPLIANCE.md §2's
-evaporation rule, which now also covers this text).
+Two independent axes, easy to conflate but genuinely separate:
 
-**Why a local server and not a direct client→OpenAI call:** the OpenAI API key
-must never ship inside the glasses' JS bundle (it's a static asset anyone with
-the `.ehpk` or dev-server URL could extract). The proxy keeps the key
-server-side, in a process environment the key is typed into interactively
-(`tools/start-transcription-server.ps1`, `Read-Host -AsSecureString`) — never
-read from a plaintext file by a script or agent. This is a deliberate
-human-in-the-loop step, not an oversight.
+**Engine (where speech-to-text/text-to-speech actually runs):**
+- **On-device (default, standalone)**: the phone's own `SpeechRecognition` /
+  `speechSynthesis` — zero network, zero key, works out of a packaged
+  `.ehpk` install with nothing else running. `stt/webSpeech.ts` /
+  `tts/webSpeech.ts`.
+- **OpenAI proxy (`?stt=proxy` / `?tts=proxy`, higher accuracy)**: audio goes
+  to the local `transcription-server.mjs` (`/api/transcribe`, `/api/tts`),
+  which calls OpenAI. Same key-never-in-the-bundle reasoning as before — the
+  key is typed interactively into `start-transcription-server.ps1`
+  (`Read-Host -AsSecureString`), never read from a plaintext file by any
+  script or agent. `stt/openAiProxy.ts` / `tts/openAiProxy.ts`.
+  Auto-fallback: if the WebView lacks `SpeechRecognition`, dictation drops to
+  the proxy path automatically even without `?stt=proxy`.
 
-**PCM format is still unverified** (SDK 0.0.12 doesn't document sample
-rate/depth for `audioEvent`); `transcription-server.mjs` assumes 16 kHz mono
-16-bit and has produced coherent transcripts in on-device testing, which is
-reasonable (if indirect) confirmation — revisit if transcripts come back
-sped-up, slowed-down, or garbled.
+**Mode (what the transcribed text is used for) — all implemented in `app.ts`:**
+- **Tap-driven dictation**: tap the Patient card to start, tap again to
+  save — one finished note per session.
+- **Hands-free voice control** (Menu → Voice control): one continuous
+  recognition stream parses commands via `voice/commands.ts`
+  (`parseVoiceCommand`, English + German, unit-tested) — *"open board"*,
+  *"next/previous patient"* (broadcasts room-wide exactly like a dashboard
+  voice command), *"take a note"* / *"note 〈text〉"*, *"decision 〈text〉"*
+  (a starred, case-tagged note — local-only until vr-mtb-web grows a write
+  API), *"read notes"*, *"stop"*. Unknown speech is silently ignored on
+  purpose — ambient meeting conversation must never trigger anything.
+  Auto-restarts on the engine's spontaneous silence-timeout end, with a
+  flap-guard (3 rapid restarts = give up, not loop forever); readback pauses
+  listening first so the mic never transcribes its own TTS.
+- **Captions** (Menu → Captions): every segment the voice-control stream
+  hears — commands and ambient dictation both — is pushed into
+  `captionsCard.ts` as a rolling, word-wrapped transcript. Session-only,
+  cleared with notes on exit (PHI-adjacent, same evaporation rule as
+  COMPLIANCE.md §2).
+- **Readback**: after a note/decision saves, it's spoken back — through the
+  **phone's** speaker, since the G2 has none. `?tts=0` disables it.
 
-**Live captions remain P2/future work**, using the still-scaffolded streaming
-`SttProvider` interface (`stt/provider.ts`, `stt/webSpeech.ts`) instead of this
-push-to-talk one-shot path. Vendor choice for real patient audio — self-hosted
-vs. cloud — is unchanged from COMPLIANCE.md's original guidance and still
-needs DPO sign-off; the OpenAI path above is explicitly a demo-speed choice,
-not the recommended production default.
+**PCM format for the proxy path is still unverified** (SDK 0.0.12 doesn't
+document sample rate/depth for `audioEvent`); `transcription-server.mjs`
+assumes 16 kHz mono 16-bit and has produced coherent transcripts in on-device
+testing — reasonable if indirect confirmation, revisit if transcripts come
+back sped-up, slowed-down, or garbled.
 
-## 7. Failure modes
+Vendor choice for real patient audio is unchanged from COMPLIANCE.md's
+original guidance and still needs DPO sign-off before real use, regardless of
+engine: the phone's own OS speech recognizer may itself call a vendor speech
+service, and the OpenAI proxy path is explicitly a demo-speed choice, not the
+recommended production default (self-hosted Whisper is).
+
+## 7. Live voice ("Talk") — genuine two-way WebRTC audio, not STT/TTS
+
+Menu → Talk (LiveKit) publishes the wearer's live microphone into the room so
+**other participants actually hear them talk in real time** — this is a
+different thing from everything in §6, which only ever moves finished text.
+`liveKitSync.ts`'s `setMicPublished()` calls
+`room.localParticipant.setMicrophoneEnabled()` — the exact API vr-mtb-web's
+own `livekitChannel.ts` uses for the dashboard's mic button, so the G2
+behaves as an ordinary room participant, not a special case.
+
+**This publishes the phone's microphone, not the glasses'.** `setMicrophoneEnabled`
+captures via the WebView's standard `getUserMedia`, a browser API - the G2's
+own mic only ever streams out through the SDK's separate custom PCM/
+`audioControl` channel (used for dictation in §6), which is not a standard
+Web Audio input device and so isn't what WebRTC captures from inside this
+WebView. Bridging the glasses' own PCM into a published track would need a
+Web Audio bridge (`AudioContext` + `MediaStreamAudioDestinationNode`) feeding
+a synthetic `MediaStreamTrack` - not implemented; a real candidate follow-up
+once phone-mic publish itself is verified working on device, since it
+answers the ROADMAP P3 question ("can the G2 replace the Rokid for
+speak-only participants?") more directly.
+
+**Mic ownership is exclusive across three features** (Talk, tap-dictation's
+on-device path, and hands-free voice control) because all three can end up
+wanting the same phone microphone hardware. `app.ts` enforces one-stream-at-
+a-time in both directions: starting Talk stops dictation/voice-control
+first (`toggleTalk()`), and starting on-device dictation drops a live Talk
+publish first (`dropTalkForMic()`, called from `startDeviceDictation()`'s
+call site and from `toggleVoiceControl()`). The proxy dictation path is
+exempt from this — it streams the glasses' own separate PCM channel, not
+`getUserMedia`, so it can't actually contend with Talk regardless.
+
+Not available against `MockSync` (`getTalkStatus`/`setMicPublished` are
+optional on `BoardSync`) - the Talk card shows why rather than a dead button.
+Not yet hand-tested against a live vr-mtb-web backend + LiveKit server (built
+and verified in the browser mock preview only, where the fallback path is
+what's actually exercised).
+
+## 8. Failure modes
 
 | Failure | Behavior |
 |---|---|
 | Wi-Fi/LiveKit drop | Card shows stale-data marker after 30 s without messages; auto-reconnect (LiveKit SDK) then full state arrives on next publish |
-| BLE drop / glasses in case | Even App owns reconnect; `wearGuard` blanks PHI meanwhile |
-| Dashboard not publishing `vrmtb.hud` yet | App stays functional on mock/demo data; sync source is a boot-time flag |
-| Token service unreachable | Retry with backoff, HUD shows "offline" chip on Board card, no crash |
+| BLE drop / glasses in case | Even App owns reconnect; `wearGuard` blanks PHI and kills active voice-control listening meanwhile |
+| vr-mtb-web backend unreachable | App stays functional on mock/demo data; sync source is a boot-time flag (`?sync=livekit` vs. default) |
+| Transcription/TTS proxy unreachable | Dictation/readback fail gracefully with a footer message ("Server unreachable" / "Readback unavailable"), never a crash; on-device engines are unaffected since they don't need the proxy |
+| Talk mic permission denied | `setMicPublished` returns false, footer shows "Mic permission denied", card stays in the off state |

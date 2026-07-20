@@ -82,6 +82,14 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
   *"starte die Untertitel"*) shows a rolling, word-wrapped live transcript
   of everything the voice-control stream hears — session-only, cleared on
   exit like notes.
+- **Talk (live voice, `?sync=livekit` only)**: Menu → Talk (LiveKit) → tap to
+  publish the phone's mic into the real LiveKit room, so other participants
+  hear the G2 wearer speak live — this is genuine two-way WebRTC audio,
+  distinct from dictation/captions (which only ever move finished text).
+  Tap again to mute. Only one mic-using stream runs at a time: starting Talk
+  stops dictation/hands-free voice control and vice versa. Not available
+  against the mock/demo board (shows why on the card). See ARCHITECTURE.md §7
+  for why this publishes the **phone's** mic, not the glasses' own PCM.
 - **Live sync**: `src/sync/liveKitSync.ts` talks to the **real** vr-mtb-web
   backend directly — `POST /api/rooms/join`, `GET /api/session`, and the same
   LiveKit `activePatient`/`command` data-channel topics the dashboard's own
@@ -105,7 +113,7 @@ npm run build      # type-checks and bundles for sideloading / Even Hub dev port
 | `?tts=0` | Disable the spoken note readback (on by default; plays on the **phone** — the G2 has no speaker) |
 | `?tts=proxy` | Force readback through the proxy's OpenAI TTS instead of the phone's built-in speech synthesis |
 | `?tts_url=<url>` | Point proxy readback at a TTS endpoint other than `<transcribe server>/api/tts` |
-| `?sync=livekit&token_url=…&room=…&identity=…` | Use the real LiveKit board instead of mock data |
+| `?sync=livekit&backend=<url>&room=<code>&identity=<id>&name=<display>` | Use the real vr-mtb-web backend/room instead of mock data — also unlocks the Talk (LiveKit) live-voice card |
 
 ## Installing on the glasses (QR sideload)
 
@@ -248,5 +256,12 @@ through the lens), so three options, best first:
 - [x] LiveKit sync client speaking vr-mtb-web's **real** backend protocol
       directly (verified against its actual source — no dashboard changes
       needed; two-way, not just a mirror — see ARCHITECTURE.md §2-3)
+- [x] Talk (LiveKit): live two-way voice publish so the room actually hears the
+      G2 wearer — `room.localParticipant.setMicrophoneEnabled`, the same API
+      the dashboard itself uses; mic-ownership guarded against dictation and
+      hands-free voice control (one stream at a time); verified in the
+      browser preview against the mock board's graceful "not available"
+      fallback — not yet hand-tested against a live backend
 - [ ] Hand-tested against a running vr-mtb-web backend + LiveKit server (built and reviewed against source, not yet run live)
 - [ ] STT provider decision for real patient audio (phone Web Speech / OpenAI cloud both involve vendor services; self-hosted recommended before real use — see COMPLIANCE.md §3)
+- [ ] 17 unit tests passing (`npm test`); no test coverage yet for app.ts's orchestration itself (mic-ownership guards, card wiring) — covered by manual/browser verification only

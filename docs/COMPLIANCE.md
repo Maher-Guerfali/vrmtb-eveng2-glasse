@@ -28,14 +28,23 @@ Architectural guarantees backing that sentence:
 
 ## 2. GDPR: minimize, pseudonymize, evaporate
 
-**What the glasses may show** (`HudPatientSummary`): case pseudonym
-(e.g. `MTB-2026-014` + initials), age, sex, menopausal status, cTNM/pTNM,
-grading, ER/PR/HER2, Ki-67, ≤3 history lines, the question to the board.
-**Never**: full name, birth date, address, IDs, images.
+**What the glasses may show** (`HudPatientSummary`, generalized to
+vr-mtb-web's real, disease-agnostic schema — see ARCHITECTURE.md §2-3):
+opaque case ID, primary diagnosis (`dx`), up to 3 condition lines
+(ICD-10 code + name + onset), only the *abnormal* labs (flag set), and the
+first allergy. **Never**: full name, date of birth, address, medications,
+procedures, imaging, vitals, genomics, or anything not in that whitelist —
+even though `GET /api/session` (the real backend endpoint this app calls)
+returns all of it.
 
-- **Minimization at the publisher.** The dashboard curates the `vrmtb.hud`
-  payload; the wearable never receives more than it renders. The glass app is
-  not trusted with filtering.
+- **Minimization happens client-side, in `liveKitSync.ts`'s `toHudPatient()`
+  mapping function** — not at the backend, since vr-mtb-web's `/api/session`
+  is a general-purpose endpoint that legitimately returns full PHI to the
+  dashboard's own trust boundary. This is a stricter promise than the
+  dashboard's own: a personal wearable has a different loss/glance-over-
+  shoulder risk than a locked clinical workstation. `toHudPatient()` is the
+  ONE place in this codebase allowed to see `name`/`dob`, and it must never
+  let them reach `HudPatientSummary` or the store.
 - **No persistence.** No PHI in `localStorage`, no logs containing payloads,
   nothing cached beyond the in-memory store of the current meeting.
 - **Evaporation.** `wearGuard` blanks patient content when `isWearing=false`
@@ -81,6 +90,20 @@ indicator is still a gap, see above; push-to-talk for dictation (mic open only
 between explicit taps, already implemented); transcripts should land in the
 same access-controlled notes store as typed notes once the dashboard side
 exists (today they live only in the glass app's in-memory Notes card).
+
+### 3b. Live voice ("Talk") is a different risk category than dictation
+
+Menu → Talk (LiveKit) publishes the wearer's live microphone into the room
+(ARCHITECTURE.md §7) — this is **not** a new PHI-exposure path the way
+dictation/captions are: it's the same live-voice-call model every other
+VR-MTB client (Unity, dashboard, Rokid) already uses, and it never touches
+OpenAI or any transcription vendor — audio goes directly, WebRTC-encrypted,
+to the self-hosted LiveKit server the rest of the system already requires
+(see backend/README.md's GDPR note on why LiveKit must be self-hosted, not
+LiveKit Cloud). The DPO review this document asks for is about the STT/TTS
+vendor path (§3), not about adding the G2 as a voice participant per se —
+though the "who's actually talking" transparency point below still applies
+equally to a G2 wearer as to any other participant.
 
 ## 4. Checklist before pilot with real data
 

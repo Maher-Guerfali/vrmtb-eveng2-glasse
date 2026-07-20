@@ -72,6 +72,15 @@ export class BoardStore {
   }
 }
 
+/** Live-voice snapshot for the Talk card - distinct from dictation/STT, this
+ *  is actual two-way WebRTC audio other room participants can hear. */
+export interface TalkStatus {
+  connected: boolean;
+  micPublished: boolean;
+  /** Including the local participant. */
+  participantCount: number;
+}
+
 export interface BoardSync {
   readonly label: string;
   start(store: BoardStore): Promise<void>;
@@ -83,4 +92,15 @@ export interface BoardSync {
    * sync). Optional: MockSync has nothing to broadcast to.
    */
   sendCommand?(command: string, args?: Record<string, unknown>): void | Promise<void>;
+  /**
+   * Publish/unpublish the local device's live microphone into the room's
+   * WebRTC audio, so other participants actually hear the wearer talk in
+   * real time - separate from dictation (which only ever sends finished
+   * text). Returns the resulting published state (false if it couldn't
+   * start, e.g. mic permission denied or not connected). Optional: MockSync
+   * has no room to publish into.
+   */
+  setMicPublished?(enabled: boolean): Promise<boolean>;
+  /** Current live-voice snapshot; undefined where setMicPublished isn't supported. */
+  getTalkStatus?(): TalkStatus;
 }

@@ -99,8 +99,16 @@ this exit gate are still open.)*
       take-off. Verified headless; not yet hand-tested on device
 - [ ] Decide card: `DecisionRequested` → confirm/dissent tap → tally on dashboard
 - [ ] AI card: voice query → existing AI backend → ≤5-line answer
-- [ ] Experiment: publish glasses/phone mic into the LiveKit room (can the G2
-      replace the Rokid for speak-only participants?) — measure latency, decide
+- [x] Talk (LiveKit): Menu → Talk (LiveKit) publishes the phone's mic into
+      the room via `room.localParticipant.setMicrophoneEnabled` (the same
+      API the dashboard itself uses) — the G2 can now genuinely replace the
+      Rokid for speak-only participants, pending on-device confirmation. Mic
+      ownership is exclusive with dictation/voice-control in both directions.
+      Publishes the **phone's** mic, not the glasses' own PCM channel (see
+      ARCHITECTURE.md §7 for why, and the Web Audio bridge that would change
+      that). Verified in the browser mock preview (graceful "not available"
+      fallback); latency and phone-mic-vs-glasses-mic UX not yet measured on
+      a live board — that measurement is what remains of this experiment
 - [ ] R1 ring support pass (event source already handled by the router)
 - [ ] Study instrumentation: card-view analytics (pseudonymous) for the
       four-modality comparison paper
